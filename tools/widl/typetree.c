@@ -202,6 +202,26 @@ type_t *type_new_alias(type_t *t, const char *name)
     return a;
 }
 
+type_t* type_new_alias2(type_t *t, const char *name, struct namespace *namespace)
+{
+    type_t *a = NULL;
+
+    assert(t != NULL);
+    assert(name != NULL);
+
+    a = alloc_type();
+    *a = *t;
+
+    a->name = xstrdup(name);
+    a->namespace = namespace;
+    a->attrs = NULL;
+    a->orig = t;
+    a->is_alias = TRUE;
+    init_loc_info(&a->loc_info);
+
+    return a;
+}
+
 type_t *type_new_module(char *name)
 {
     type_t *type = get_type(TYPE_MODULE, name, NULL, 0);

@@ -2010,7 +2010,7 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
                     cur->loc_info.line_number);
 
       name = declare_var(attrs, decl_spec, decl, 0);
-      cur = type_new_alias(name->type, name->name);
+      cur = type_new_alias2(name->type, name->name, current_namespace);
       cur->attrs = attrs;
 
       if (is_incomplete(cur))
