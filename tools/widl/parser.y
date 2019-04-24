@@ -1197,7 +1197,7 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 
 static void decl_builtin_alias(const char *name, type_t *t)
 {
-  reg_type(type_new_alias(t, name), name, NULL, 0);
+  reg_type(type_new_alias(t, name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1813,7 +1813,7 @@ static declarator_t *make_declarator(var_t *var)
 
 static type_t *make_safearray(type_t *type)
 {
-  return type_new_array(NULL, type_new_alias(type, "SAFEARRAY"), TRUE, 0,
+  return type_new_array(NULL, type_new_alias(type, "SAFEARRAY", &global_namespace), TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 
@@ -2010,7 +2010,7 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
                     cur->loc_info.line_number);
 
       name = declare_var(attrs, decl_spec, decl, 0);
-      cur = type_new_alias2(name->type, name->name, current_namespace);
+      cur = type_new_alias(name->type, name->name, current_namespace);
       cur->attrs = attrs;
 
       if (is_incomplete(cur))

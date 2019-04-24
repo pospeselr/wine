@@ -187,22 +187,7 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
     return t;
 }
 
-type_t *type_new_alias(type_t *t, const char *name)
-{
-    type_t *a = duptype(t, 0);
-
-    a->name = xstrdup(name);
-    a->attrs = NULL;
-    a->orig = t;
-    a->is_alias = TRUE;
-    /* for pointer types */
-    a->details = t->details;
-    init_loc_info(&a->loc_info);
-
-    return a;
-}
-
-type_t* type_new_alias2(type_t *t, const char *name, struct namespace *namespace)
+type_t* type_new_alias(type_t *t, const char *name, struct namespace *namespace)
 {
     type_t *a = NULL;
 

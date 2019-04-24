@@ -31,8 +31,7 @@ enum name_type {
 
 type_t *type_new_function(var_list_t *args);
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs);
-type_t *type_new_alias(type_t *t, const char *name);
-type_t* type_new_alias2(type_t *t, const char *name, struct namespace *namespace);
+type_t* type_new_alias(type_t *t, const char *name, struct namespace *namespace);
 type_t *type_new_module(char *name);
 type_t *type_new_array(const char *name, type_t *element, int declptr,
                        unsigned int dim, expr_t *size_is, expr_t *length_is,
