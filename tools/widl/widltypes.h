@@ -40,6 +40,7 @@ typedef struct _attr_t attr_t;
 typedef struct _expr_t expr_t;
 typedef struct _type_t type_t;
 typedef struct _var_t var_t;
+typedef struct _decl_spec_t decl_spec_t;
 typedef struct _declarator_t declarator_t;
 typedef struct _ifref_t ifref_t;
 typedef struct _typelib_entry_t typelib_entry_t;
@@ -49,7 +50,7 @@ typedef struct _typelib_t typelib_t;
 typedef struct _user_type_t user_type_t;
 typedef struct _user_type_t context_handle_t;
 typedef struct _user_type_t generic_handle_t;
-typedef struct _type_list_t type_list_t;
+typedef struct _typedef_list_t typedef_list_t;
 typedef struct _statement_t statement_t;
 typedef struct _warning_t warning_t;
 
@@ -232,6 +233,18 @@ enum storage_class
     STG_STATIC,
     STG_EXTERN,
     STG_REGISTER,
+};
+
+enum type_qualifier
+{
+    TYPE_QUALIFIER_NONE,
+    TYPE_QUALIFIER_CONST
+};
+
+enum function_specifier
+{
+    FUNCTION_SPECIFIER_NONE,
+    FUNCTION_SPECIFIER_INLINE,
 };
 
 enum statement_type
@@ -447,12 +460,19 @@ struct _type_t {
   unsigned int is_alias : 1; /* is the type an alias? */
 };
 
+struct _decl_spec_t
+{
+  type_t *type;
+  enum storage_class stgclass;
+  enum type_qualifier typequalifier;
+  enum function_specifier funcspecifier;
+};
+
 struct _var_t {
   char *name;
-  type_t *type;
+  decl_spec_t declspec;
   attr_list_t *attrs;
   expr_t *eval;
-  enum storage_class stgclass;
   unsigned int procstring_offset;
   unsigned int typestring_offset;
 
@@ -523,6 +543,11 @@ struct _user_type_t {
     const char *name;
 };
 
+struct _typedef_list_t {
+  var_t *var;
+  struct _typedef_list_t *next;
+};
+
 struct _type_list_t {
     type_t *type;
     struct _type_list_t *next;
@@ -538,7 +563,7 @@ struct _statement_t {
         const char *str;
         var_t *var;
         typelib_t *lib;
-        type_list_t *type_list;
+        typedef_list_t *typedef_list;
     } u;
 };
 
@@ -596,8 +621,8 @@ static inline enum type_type type_get_type_detect_alias(const type_t *type)
 
 #define STATEMENTS_FOR_EACH_FUNC(stmt, stmts) \
   if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry ) \
-    if (stmt->type == STMT_DECLARATION && stmt->u.var->stgclass == STG_NONE && \
-        type_get_type_detect_alias(stmt->u.var->type) == TYPE_FUNCTION)
+    if (stmt->type == STMT_DECLARATION && stmt->u.var->declspec.stgclass == STG_NONE && \
+        type_get_type_detect_alias(stmt->u.var->declspec.type) == TYPE_FUNCTION)
 
 static inline int statements_has_func(const statement_list_t *stmts)
 {

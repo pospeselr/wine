@@ -56,6 +56,8 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 /* FIXME: shouldn't need to export this */
 type_t *duptype(type_t *t, int dupname);
 
+/* TODO: basically make all of these functions work with decltypes */
+
 /* un-alias the type until finding the non-alias type */
 static inline type_t *type_get_real_type(const type_t *type)
 {
@@ -107,7 +109,7 @@ static inline var_t *type_function_get_retval(const type_t *type)
 
 static inline type_t *type_function_get_rettype(const type_t *type)
 {
-    return type_function_get_retval(type)->type;
+    return type_function_get_retval(type)->declspec.type;
 }
 
 static inline var_list_t *type_enum_get_values(const type_t *type)
@@ -142,7 +144,7 @@ static inline var_list_t *type_union_get_cases(const type_t *type)
     if (type_type == TYPE_ENCAPSULATED_UNION)
     {
         const var_t *uv = LIST_ENTRY(list_tail(type->details.structure->fields), const var_t, entry);
-        return uv->type->details.structure->fields;
+        return uv->declspec.type->details.structure->fields;
     }
     else
         return type->details.structure->fields;
