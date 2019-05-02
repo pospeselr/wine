@@ -57,7 +57,7 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 /* FIXME: shouldn't need to export this */
 type_t *duptype(type_t *t, int dupname);
 
-/* TODO: basically make all of these functions work with decltypes */
+/* TODO: basically make all of these functions work with decltypes instead */
 
 /* un-alias the type until finding the non-alias type */
 static inline type_t *type_get_real_type(const type_t *type)
@@ -297,11 +297,13 @@ static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)
     return type->details.coclass.ifaces;
 }
 
+/* TODO: this may need to return a decltype */
+/* in fact it says get_ref so yeah */
 static inline type_t *type_pointer_get_ref(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_POINTER);
-    return type->details.pointer.ref;
+    return type->details.pointer.ref.type;
 }
 
 static inline unsigned char type_pointer_get_default_fc(const type_t *type)

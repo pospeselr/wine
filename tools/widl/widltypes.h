@@ -399,7 +399,7 @@ struct basic_details
 
 struct pointer_details
 {
-  struct _type_t *ref;
+  struct _decl_spec_t ref;
   unsigned char def_fc;
 };
 

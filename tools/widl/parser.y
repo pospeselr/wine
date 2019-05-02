@@ -1525,7 +1525,7 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         ;
 
     if (is_ptr(chain_type))
-        chain_type->details.pointer.ref = type;
+        chain_type->details.pointer.ref.type = type;
     else if (is_array(chain_type))
         chain_type->details.array.elem = type;
     else
@@ -1677,7 +1677,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     }
 
     if (is_ptr(*ptype))
-      ptype = &(*ptype)->details.pointer.ref;
+      ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
       ptype = &(*ptype)->details.array.elem;
     else
@@ -1703,7 +1703,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     }
 
     if (is_ptr(*ptype))
-      ptype = &(*ptype)->details.pointer.ref;
+      ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
       ptype = &(*ptype)->details.array.elem;
     else

@@ -178,17 +178,16 @@ type_t *type_new_function(var_list_t *args)
     return t;
 }
 
-/* TODO: this should take a declspec */
+/* TODO: how is const pointer formed */
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs)
 {
     type_t *t = make_type(TYPE_POINTER);
     t->details.pointer.def_fc = pointer_default;
-    t->details.pointer.ref = ref;
+    t->details.pointer.ref.type = ref;
     t->attrs = attrs;
     return t;
 }
 
-/* TODO: make this take a decltype */
 type_t* decltype_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace)
 {
     type_t *a = NULL;
