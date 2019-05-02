@@ -262,7 +262,7 @@ static inline type_t *type_array_get_element(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_ARRAY);
-    return type->details.array.elem;
+    return type->details.array.elem.type;
 }
 
 static inline int type_array_is_decl_as_ptr(const type_t *type)

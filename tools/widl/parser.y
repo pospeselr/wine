@@ -1192,8 +1192,7 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 static void decl_builtin_alias(const char *name, type_t *t)
 {
   decl_type_t decltype;
-  init_decltype(&decltype, t, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
-  reg_type(decltype_new_alias(&decltype, name, &global_namespace), name, &global_namespace, 0);
+  reg_type(decltype_new_alias(init_decltype(&decltype, t), name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1527,7 +1526,7 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
     if (is_ptr(chain_type))
         chain_type->details.pointer.ref.type = type;
     else if (is_array(chain_type))
-        chain_type->details.array.elem = type;
+        chain_type->details.array.elem.type = type;
     else
         assert(0);
 
@@ -1679,7 +1678,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     if (is_ptr(*ptype))
       ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
-      ptype = &(*ptype)->details.array.elem;
+      ptype = &(*ptype)->details.array.elem.type;
     else
       error_loc("%s: too many expressions in size_is attribute\n", v->name);
   }
@@ -1705,7 +1704,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     if (is_ptr(*ptype))
       ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
-      ptype = &(*ptype)->details.array.elem;
+      ptype = &(*ptype)->details.array.elem.type;
     else
       error_loc("%s: too many expressions in length_is attribute\n", v->name);
   }
@@ -1859,8 +1858,7 @@ static declarator_t *make_declarator(var_t *var)
 static type_t *make_safearray(type_t *type)
 {
   decl_type_t decltype;
-  init_decltype(&decltype, type, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
-  return type_new_array(NULL, decltype_new_alias(&decltype, "SAFEARRAY", &global_namespace), TRUE, 0,
+  return type_new_array(NULL, decltype_new_alias(init_decltype(&decltype, type), "SAFEARRAY", &global_namespace), TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 

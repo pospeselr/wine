@@ -379,7 +379,7 @@ struct array_details
 {
   expr_t *size_is;
   expr_t *length_is;
-  struct _type_t *elem;
+  struct _decl_spec_t elem;
   unsigned int dim;
   unsigned char ptr_def_fc;
   unsigned char declptr; /* if declared as a pointer */
@@ -649,7 +649,8 @@ static inline int is_global_namespace(const struct namespace *namespace)
     return !namespace->name;
 }
 
-static inline decl_type_t *init_decltype(decl_type_t *decltype, type_t *type, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+/* TODO: replace calls to init_decltype with init_decltype_ex where appropriate */
+static inline decl_type_t *init_decltype_ex(decl_type_t *decltype, type_t *type, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
 {
   decltype->type = type;
   decltype->stgclass=stgclass;
@@ -658,5 +659,12 @@ static inline decl_type_t *init_decltype(decl_type_t *decltype, type_t *type, en
 
   return decltype;
 }
+
+static inline decl_type_t* init_decltype(decl_type_t *decltype, type_t *type)
+{
+  return init_decltype_ex(decltype, type, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
+}
+
+
 
 #endif

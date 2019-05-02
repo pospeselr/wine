@@ -240,8 +240,8 @@ type_t *type_new_array(const char *name, type_t *element, int declptr,
     if (size_is)
         t->details.array.size_is = size_is;
     else
-        t->details.array.dim = dim;
-    t->details.array.elem = element;
+        t->details.array.dim = dim;\
+    init_decltype(&t->details.array.elem, element);
     t->details.array.ptr_def_fc = ptr_default_fc;
     return t;
 }
@@ -498,6 +498,7 @@ type_t *type_coclass_define(type_t *coclass, ifref_list_t *ifaces)
     return coclass;
 }
 
+/* TODO: after resolving typedefs should be able to do pointer compare once duptype is gone */
 int type_is_equal(const type_t *type1, const type_t *type2)
 {
     if (type_get_type_detect_alias(type1) != type_get_type_detect_alias(type2))
