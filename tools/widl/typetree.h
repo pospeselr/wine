@@ -62,7 +62,7 @@ type_t *duptype(type_t *t, int dupname);
 static inline type_t *type_get_real_type(const type_t *type)
 {
     if (type->is_alias)
-        return type_get_real_type(type->orig);
+        return type_get_real_type(type->details.alias.decltype.type);
     else
         return (type_t *)type;
 }
@@ -110,6 +110,11 @@ static inline var_t *type_function_get_retval(const type_t *type)
 static inline type_t *type_function_get_rettype(const type_t *type)
 {
     return type_function_get_retval(type)->declspec.type;
+}
+
+static inline decl_spec_t* type_function_get_retdeclspec(const type_t *type)
+{
+    return &(type_function_get_retval(type)->declspec);
 }
 
 static inline var_list_t *type_enum_get_values(const type_t *type)
@@ -281,7 +286,7 @@ static inline int type_is_alias(const type_t *type)
 static inline type_t *type_alias_get_aliasee(const type_t *type)
 {
     assert(type_is_alias(type));
-    return type->orig;
+    return type->details.alias.decltype.type;
 }
 
 static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)

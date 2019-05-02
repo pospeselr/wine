@@ -40,7 +40,9 @@ typedef struct _attr_t attr_t;
 typedef struct _expr_t expr_t;
 typedef struct _type_t type_t;
 typedef struct _var_t var_t;
+/* TODO: purge decl_spec and replace with decl_type */
 typedef struct _decl_spec_t decl_spec_t;
+typedef decl_spec_t decl_type_t;
 typedef struct _declarator_t declarator_t;
 typedef struct _ifref_t ifref_t;
 typedef struct _typelib_entry_t typelib_entry_t;
@@ -306,6 +308,14 @@ struct str_list_entry_t
     struct list entry;
 };
 
+struct _decl_spec_t
+{
+  struct _type_t *type;
+  enum storage_class stgclass;
+  enum type_qualifier typequalifier;
+  enum function_specifier funcspecifier;
+};
+
 struct _attr_t {
   enum attr_type type;
   union {
@@ -399,6 +409,11 @@ struct bitfield_details
   const expr_t *bits;
 };
 
+struct typedef_details
+{
+  struct _decl_spec_t decltype;
+};
+
 #define HASHMAX 64
 
 struct namespace {
@@ -444,9 +459,9 @@ struct _type_t {
     struct basic_details basic;
     struct pointer_details pointer;
     struct bitfield_details bitfield;
+    struct typedef_details alias; /* typedef is a keyword oh well */
   } details;
   const char *c_name;
-  type_t *orig;                   /* dup'd types */
   unsigned int typestring_offset;
   unsigned int ptrdesc;           /* used for complex structs */
   int typelib_idx;
@@ -460,13 +475,6 @@ struct _type_t {
   unsigned int is_alias : 1; /* is the type an alias? */
 };
 
-struct _decl_spec_t
-{
-  type_t *type;
-  enum storage_class stgclass;
-  enum type_qualifier typequalifier;
-  enum function_specifier funcspecifier;
-};
 
 struct _var_t {
   char *name;

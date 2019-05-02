@@ -50,7 +50,6 @@ type_t *make_type(enum type_type type)
     t->type_type = type;
     t->attrs = NULL;
     t->c_name = NULL;
-    t->orig = NULL;
     memset(&t->details, 0, sizeof(t->details));
     t->typestring_offset = 0;
     t->ptrdesc = 0;
@@ -179,6 +178,7 @@ type_t *type_new_function(var_list_t *args)
     return t;
 }
 
+/* TODO: this should take a declspec */
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs)
 {
     type_t *t = make_type(TYPE_POINTER);
@@ -188,6 +188,7 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
     return t;
 }
 
+/* TODO: make this take a decltype */
 type_t* type_new_alias(type_t *t, const char *name, struct namespace *namespace)
 {
     type_t *a = NULL;
@@ -201,7 +202,10 @@ type_t* type_new_alias(type_t *t, const char *name, struct namespace *namespace)
     a->name = xstrdup(name);
     a->namespace = namespace;
     a->attrs = NULL;
-    a->orig = t;
+    a->details.alias.decltype.type = t;
+    a->details.alias.decltype.stgclass = STG_NONE;
+    a->details.alias.decltype.typequalifier = TYPE_QUALIFIER_NONE;
+    a->details.alias.decltype.funcspecifier = FUNCTION_SPECIFIER_NONE;
     a->is_alias = TRUE;
     init_loc_info(&a->loc_info);
 
