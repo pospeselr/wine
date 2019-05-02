@@ -1191,7 +1191,9 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 
 static void decl_builtin_alias(const char *name, type_t *t)
 {
-  reg_type(type_new_alias(t, name, &global_namespace), name, &global_namespace, 0);
+  decl_type_t decltype;
+  init_decltype(&decltype, t, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
+  reg_type(decltype_new_alias(&decltype, name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1547,7 +1549,6 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-/* TODO: shove that declspec in there */
 static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl,
                        int top)
 {
@@ -1739,6 +1740,11 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   if (decl->bits)
     v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
 
+  parser_warning("declare_var\n");
+  parser_warning("var name: %s\n", v->name);
+  parser_warning("type name: %s\n", v->declspec.type->name);
+  parser_warning(" const : %d\n", declspec->typequalifier == TYPE_QUALIFIER_CONST);
+
   return v;
 }
 
@@ -1809,13 +1815,15 @@ var_t *make_var(char *name)
   var_t *v = xmalloc(sizeof(var_t));
   v->name = name;
   v->declspec.type = NULL;
+  v->declspec.stgclass = STG_NONE;
+  v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
+  v->declspec.funcspecifier = FUNCTION_SPECIFIER_NONE;
   v->attrs = NULL;
   v->eval = NULL;
   init_loc_info(&v->loc_info);
   return v;
 }
 
-/* TODO: make this handle copying declspec correctly; might be right to just copy the ptr */
 static var_t *copy_var(var_t *src, char *name, map_attrs_filter_t attr_filter)
 {
   var_t *v = xmalloc(sizeof(var_t));
@@ -1850,7 +1858,9 @@ static declarator_t *make_declarator(var_t *var)
 
 static type_t *make_safearray(type_t *type)
 {
-  return type_new_array(NULL, type_new_alias(type, "SAFEARRAY", &global_namespace), TRUE, 0,
+  decl_type_t decltype;
+  init_decltype(&decltype, type, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
+  return type_new_array(NULL, decltype_new_alias(&decltype, "SAFEARRAY", &global_namespace), TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 
@@ -2030,6 +2040,11 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
       type_t *cur;
       var_t *name;
 
+      parser_warning("name : %s\n", decl->var->name);
+      parser_warning(" decl_spec->stgclass : %d\n", decl_spec->stgclass);
+      parser_warning(" decl_spec->typequalifier : %d\n", decl_spec->typequalifier);
+      parser_warning(" decl_spec->funcspecifier : %d\n", decl_spec->funcspecifier);
+
       cur = find_type(decl->var->name, current_namespace, 0);
 
       /*
@@ -2047,7 +2062,7 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
                     cur->loc_info.line_number);
 
       name = declare_var(attrs, decl_spec, decl, 0);
-      cur = type_new_alias(name->declspec.type, name->name, current_namespace);
+      cur = decltype_new_alias(&name->declspec, name->name, current_namespace);
       cur->attrs = attrs;
 
       if (is_incomplete(cur))

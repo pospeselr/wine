@@ -649,4 +649,14 @@ static inline int is_global_namespace(const struct namespace *namespace)
     return !namespace->name;
 }
 
+static inline decl_type_t *init_decltype(decl_type_t *decltype, type_t *type, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+{
+  decltype->type = type;
+  decltype->stgclass=stgclass;
+  decltype->typequalifier=typequalifier;
+  decltype->funcspecifier=funcspecifier;
+
+  return decltype;
+}
+
 #endif

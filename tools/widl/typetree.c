@@ -189,23 +189,20 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
 }
 
 /* TODO: make this take a decltype */
-type_t* type_new_alias(type_t *t, const char *name, struct namespace *namespace)
+type_t* decltype_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace)
 {
     type_t *a = NULL;
 
-    assert(t != NULL);
+    assert(decltype != NULL);
     assert(name != NULL);
 
     a = alloc_type();
-    *a = *t;
+    *a = *decltype->type;
 
     a->name = xstrdup(name);
     a->namespace = namespace;
     a->attrs = NULL;
-    a->details.alias.decltype.type = t;
-    a->details.alias.decltype.stgclass = STG_NONE;
-    a->details.alias.decltype.typequalifier = TYPE_QUALIFIER_NONE;
-    a->details.alias.decltype.funcspecifier = FUNCTION_SPECIFIER_NONE;
+    a->details.alias.decltype = *decltype;
     a->is_alias = TRUE;
     init_loc_info(&a->loc_info);
 
