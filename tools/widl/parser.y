@@ -1385,6 +1385,7 @@ static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t
 
 static attr_t *make_attr(enum attr_type type)
 {
+  /* TODO: catch const in here and figure out how to pipe it into declspec */
   attr_t *a = xmalloc(sizeof(attr_t));
   a->type = type;
   a->u.ival = 0;
@@ -1504,11 +1505,11 @@ static int is_allowed_range_type(const type_t *type)
         return FALSE;
     }
 }
-
+/* TODO: ref is technically a declspec now so see how this is used */
 static type_t *get_array_or_ptr_ref(type_t *type)
 {
     if (is_ptr(type))
-        return type_pointer_get_ref(type);
+        return type_pointer_get_ref(type)->type;
     else if (is_array(type))
         return type_array_get_element(type);
     return NULL;
@@ -1566,8 +1567,9 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     else
     {
       type_t *t;
+      /* TODO: inline here would be on the declspec */
       /* move inline attribute from return type node to function node */
-      for (t = func_type; is_ptr(t); t = type_pointer_get_ref(t))
+      for (t = func_type; is_ptr(t); t = type_pointer_get_ref(t)->type)
         ;
       t->attrs = move_attr(t->attrs, type->attrs, ATTR_INLINE);
     }
@@ -1598,7 +1600,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     if (is_ptr(ptr))
     {
       if (ptr_attr && ptr_attr != FC_UP &&
-          type_get_type(type_pointer_get_ref(ptr)) == TYPE_INTERFACE)
+          type_get_type(type_pointer_get_ref(ptr)->type) == TYPE_INTERFACE)
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
@@ -1626,7 +1628,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     for (;;)
     {
         if (is_ptr(t))
-            t = type_pointer_get_ref(t);
+            t = type_pointer_get_ref(t)->type;
         else if (is_array(t))
             t = type_array_get_element(t);
         else
@@ -1669,8 +1671,11 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
                                   0, dim, NULL, 0);
       }
       else if (is_ptr(*ptype))
-        *ptype = type_new_array((*ptype)->name, type_pointer_get_ref(*ptype), TRUE,
+      {
+      	/* TODO: decltype here? */
+        *ptype = type_new_array((*ptype)->name, type_pointer_get_ref(*ptype)->type, TRUE,
                                 0, dim, NULL, pointer_default);
+      }
       else
         error_loc("%s: size_is attribute applied to illegal type\n", v->name);
     }
@@ -1717,20 +1722,20 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     type_t *ft, *t;
     type_t *return_type = v->declspec.type;
     v->declspec.type = func_type;
-    for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref(ft))
+    for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref(ft)->type)
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
     ft->details.function->retval->declspec.type = return_type;
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
-    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref(t))
+    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref(t)->type)
       ft->attrs = move_attr(ft->attrs, t->attrs, ATTR_CALLCONV);
   }
   else
   {
     type_t *t;
-    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref(t))
+    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref(t)->type)
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
@@ -2543,7 +2548,7 @@ static int is_ptr_guid_type(const type_t *type)
 
     /* second, make sure it is a pointer to something of size sizeof(GUID),
      * i.e. 16 bytes */
-    return (type_memsize(type_pointer_get_ref(type)) == 16);
+    return (type_memsize(type_pointer_get_ref(type)->type) == 16);
 }
 
 static void check_conformance_expr_list(const char *attr_name, const var_t *arg, const type_t *container_type, expr_list_t *expr_list)
@@ -2697,13 +2702,13 @@ static void check_field_common(const type_t *container_type,
         {
             const type_t *t = type;
             while (is_ptr(t))
-                t = type_pointer_get_ref(t);
+                t = type_pointer_get_ref(t)->type;
             if (is_aliaschain_attr(t, ATTR_RANGE))
                 warning_loc_info(&arg->loc_info, "%s: range not verified for a string of ranged types\n", arg->name);
             break;
         }
         case TGT_POINTER:
-            type = type_pointer_get_ref(type);
+            type = type_pointer_get_ref(type)->type;
             more_to_do = TRUE;
             break;
         case TGT_ARRAY:
@@ -3027,7 +3032,7 @@ static statement_t *make_statement_declaration(var_t *var)
     stmt->u.var = var;
     if (var->declspec.stgclass == STG_EXTERN && var->eval)
         warning("'%s' initialised and declared extern\n", var->name);
-    if (is_const_decl(var))
+    if (is_const_decltype(&var->declspec))
     {
         if (var->eval)
             reg_const(var);

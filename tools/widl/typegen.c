@@ -351,10 +351,10 @@ enum typegen_type typegen_detect_type(const type_t *type, const attr_list_t *att
             return TGT_RANGE;
         return TGT_ENUM;
     case TYPE_POINTER:
-        if (type_get_type(type_pointer_get_ref(type)) == TYPE_INTERFACE ||
-            (type_get_type(type_pointer_get_ref(type)) == TYPE_VOID && is_attr(attrs, ATTR_IIDIS)))
+        if (type_get_type(type_pointer_get_ref(type)->type) == TYPE_INTERFACE ||
+            (type_get_type(type_pointer_get_ref(type)->type) == TYPE_VOID && is_attr(attrs, ATTR_IIDIS)))
             return TGT_IFACE_POINTER;
-        else if (is_aliaschain_attr(type_pointer_get_ref(type), ATTR_CONTEXTHANDLE))
+        else if (is_aliaschain_attr(type_pointer_get_ref(type)->type, ATTR_CONTEXTHANDLE))
             return TGT_CTXT_HANDLE_POINTER;
         else
             return TGT_POINTER;
@@ -856,7 +856,7 @@ static const char *get_context_handle_type_name(const type_t *type)
     const type_t *t;
     for (t = type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t))
+         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t)->type)
         if (is_attr(t->attrs, ATTR_CONTEXTHANDLE))
             return t->name;
     assert(0);
@@ -1037,7 +1037,7 @@ static unsigned char get_parameter_fc( const var_t *var, int is_return, unsigned
     case TGT_POINTER:
         if (get_pointer_fc( var->declspec.type, var->attrs, !is_return ) == FC_RP)
         {
-            const type_t *ref = type_pointer_get_ref( var->declspec.type );
+            const type_t *ref = type_pointer_get_ref( var->declspec.type )->type;
 
             if (!is_string_type( var->attrs, ref ))
                 buffer_size = get_required_buffer_size_type( ref, NULL, NULL, TRUE, &alignment );
@@ -2118,7 +2118,7 @@ static unsigned int write_nonsimple_pointer(FILE *file, const attr_list_t *attrs
     {
         if (context == TYPE_CONTEXT_TOPLEVELPARAM && is_ptr(type) && pointer_type == FC_RP)
         {
-            switch (typegen_detect_type(type_pointer_get_ref(type), NULL, TDT_ALL_TYPES))
+            switch (typegen_detect_type(type_pointer_get_ref(type)->type, NULL, TDT_ALL_TYPES))
             {
             case TGT_STRING:
             case TGT_POINTER:
@@ -2138,7 +2138,7 @@ static unsigned int write_nonsimple_pointer(FILE *file, const attr_list_t *attrs
 
     if (is_ptr(type))
     {
-        type_t *ref = type_pointer_get_ref(type);
+        type_t *ref = type_pointer_get_ref(type)->type;
         if(is_declptr(ref) && !is_user_type(ref))
             flags |= FC_POINTER_DEREF;
     }
@@ -2179,7 +2179,7 @@ static unsigned int write_simple_pointer(FILE *file, const attr_list_t *attrs,
 
     pointer_fc = get_pointer_fc_context(type, attrs, context);
 
-    ref = type_pointer_get_ref(type);
+    ref = type_pointer_get_ref(type)->type;
     if (type_get_type(ref) == TYPE_ENUM)
         fc = get_enum_fc(ref);
     else
@@ -2217,7 +2217,7 @@ static unsigned int write_pointer_tfs(FILE *file, const attr_list_t *attrs,
                                       unsigned int *typestring_offset)
 {
     unsigned int offset = *typestring_offset;
-    type_t *ref = type_pointer_get_ref(type);
+    type_t *ref = type_pointer_get_ref(type)->type;
 
     print_start_tfs_comment(file, type, offset);
     update_tfsoff(type, offset, file);
@@ -2372,7 +2372,7 @@ static void write_array_element_type(FILE *file, const attr_list_t *attrs, const
 
     if (!is_embedded_complex(elem) && is_ptr(elem))
     {
-        type_t *ref = type_pointer_get_ref(elem);
+        type_t *ref = type_pointer_get_ref(elem)->type;
 
         if (processed(ref))
         {
@@ -2443,7 +2443,7 @@ static int write_pointer_description_offsets(
 {
     int written = 0;
 
-    if ((is_ptr(type) && type_get_type(type_pointer_get_ref(type)) != TYPE_INTERFACE) ||
+    if ((is_ptr(type) && type_get_type(type_pointer_get_ref(type)->type) != TYPE_INTERFACE) ||
         (is_array(type) && type_array_is_decl_as_ptr(type)))
     {
         if (offset_in_memory && offset_in_buffer)
@@ -2468,7 +2468,7 @@ static int write_pointer_description_offsets(
 
         if (is_ptr(type))
         {
-            type_t *ref = type_pointer_get_ref(type);
+            type_t *ref = type_pointer_get_ref(type)->type;
 
             if (is_string_type(attrs, type))
                 write_string_tfs(file, attrs, type, TYPE_CONTEXT_CONTAINER, NULL, typestring_offset);
@@ -2856,7 +2856,7 @@ static unsigned int write_string_tfs(FILE *file, const attr_list_t *attrs,
     if (is_array(type))
         elem_type = type_array_get_element(type);
     else
-        elem_type = type_pointer_get_ref(type);
+        elem_type = type_pointer_get_ref(type)->type;
 
     if (type_get_type(elem_type) == TYPE_POINTER && is_array(type))
         return write_array_tfs(file, attrs, type, name, typestring_offset);
@@ -3224,9 +3224,12 @@ static unsigned int write_struct_tfs(FILE *file, type_t *type,
                 if (is_string_type(f->attrs, ft))
                     write_string_tfs(file, f->attrs, ft, TYPE_CONTEXT_CONTAINER, f->name, tfsoff);
                 else
+                {
+                    /* TODO: see how typestring_offset is being used in general*/
                     write_pointer_tfs(file, f->attrs, ft,
-                                      type_pointer_get_ref(ft)->typestring_offset,
+                                      type_pointer_get_ref(ft)->type->typestring_offset,
                                       TYPE_CONTEXT_CONTAINER, tfsoff);
+                }
                 break;
             case TGT_ARRAY:
                 if (type_array_is_decl_as_ptr(ft))
@@ -3473,7 +3476,7 @@ static unsigned int write_ip_tfs(FILE *file, const attr_list_t *attrs, type_t *t
     }
     else
     {
-        const type_t *base = is_ptr(type) ? type_pointer_get_ref(type) : type;
+        const type_t *base = is_ptr(type) ? type_pointer_get_ref(type)->type : type;
         const UUID *uuid = get_attrp(base->attrs, ATTR_UUID);
 
         if (! uuid)
@@ -3641,7 +3644,7 @@ static unsigned int write_type_tfs(FILE *file, int indent,
     case TGT_POINTER:
     {
         enum type_context ref_context;
-        type_t *ref = type_pointer_get_ref(type);
+        type_t *ref = type_pointer_get_ref(type)->type;
 
         if (context == TYPE_CONTEXT_TOPLEVELPARAM)
             ref_context = TYPE_CONTEXT_PARAM;
@@ -3661,7 +3664,7 @@ static unsigned int write_type_tfs(FILE *file, int indent,
             return offset;
         }
 
-        offset = write_type_tfs( file, indent, attrs, type_pointer_get_ref(type), name,
+        offset = write_type_tfs( file, indent, attrs, type_pointer_get_ref(type)->type, name,
                                  ref_context, typeformat_offset);
         if (context == TYPE_CONTEXT_CONTAINER_NO_POINTERS)
             return 0;
@@ -3844,7 +3847,7 @@ static unsigned int get_required_buffer_size_type(
     case TGT_POINTER:
         {
             unsigned int size, align;
-            const type_t *ref = type_pointer_get_ref(type);
+            const type_t *ref = type_pointer_get_ref(type)->type;
             if (is_string_type( attrs, ref )) break;
             if (!(size = get_required_buffer_size_type( ref, name, NULL, FALSE, &align ))) break;
             if (get_pointer_fc(type, attrs, toplevel_param) != FC_RP)
@@ -4001,7 +4004,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
     }
     else
     {
-        const type_t *ref = is_ptr(type) ? type_pointer_get_ref(type) : type;
+        const type_t *ref = is_ptr(type) ? type_pointer_get_ref(type)->type : type;
         switch (get_basic_fc(ref))
         {
         case FC_BYTE:
@@ -4050,7 +4053,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
         if (phase == PHASE_MARSHAL)
         {
             print_file(file, indent, "*(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : type, NULL);
+            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
             if (is_ptr(type))
                 fprintf(file, " *)__frame->_StubMsg.Buffer = *");
             else
@@ -4061,7 +4064,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
         else if (phase == PHASE_UNMARSHAL)
         {
             print_file(file, indent, "if (__frame->_StubMsg.Buffer + sizeof(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : type, NULL);
+            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
             fprintf(file, ") > __frame->_StubMsg.BufferEnd)\n");
             print_file(file, indent, "{\n");
             print_file(file, indent + 1, "RpcRaiseException(RPC_X_BAD_STUB_DATA);\n");
@@ -4073,12 +4076,12 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
                 fprintf(file, " = (");
             else
                 fprintf(file, " = *(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : type, NULL);
+            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
             fprintf(file, " *)__frame->_StubMsg.Buffer;\n");
         }
 
         print_file(file, indent, "__frame->_StubMsg.Buffer += sizeof(");
-        write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : type, NULL);
+        write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
         fprintf(file, ");\n");
     }
 }
@@ -4164,7 +4167,7 @@ void write_parameter_conf_or_var_exprs(FILE *file, int indent, const char *local
             break;
         }
         case TGT_POINTER:
-            type = type_pointer_get_ref(type);
+            type = type_pointer_get_ref(type)->type;
             continue;
         case TGT_INVALID:
         case TGT_USER_TYPE:
@@ -4431,7 +4434,7 @@ static void write_remoting_arg(FILE *file, int indent, const var_t *func, const 
     }
     case TGT_POINTER:
     {
-        const type_t *ref = type_pointer_get_ref(type);
+        const type_t *ref = type_pointer_get_ref(type)->type;
         if (pointer_type == FC_RP) switch (typegen_detect_type(ref, NULL, TDT_ALL_TYPES))
         {
         case TGT_BASIC:
@@ -4638,7 +4641,7 @@ void declare_stub_args( FILE *file, int indent, const var_t *func )
                     !type_array_is_decl_as_ptr(var->declspec.type))
                     type_to_print = var->declspec.type;
                 else
-                    type_to_print = type_pointer_get_ref(var->declspec.type);
+                    type_to_print = type_pointer_get_ref(var->declspec.type)->type;
                 sprintf(name, "_W%u", i++);
                 write_type_decl(file, type_to_print, name);
                 fprintf(file, ";\n");
@@ -4726,7 +4729,7 @@ void assign_stub_out_args( FILE *file, int indent, const var_t *func, const char
                 break;
             case TGT_POINTER:
                 fprintf(file, " = &%s_W%u;\n", local_var_prefix, i);
-                ref = type_pointer_get_ref(var->declspec.type);
+                ref = type_pointer_get_ref(var->declspec.type)->type;
                 switch (typegen_detect_type(ref, var->attrs, TDT_IGNORE_STRINGS))
                 {
                 case TGT_BASIC:
@@ -4798,7 +4801,7 @@ void write_func_param_struct( FILE *file, const type_t *iface, const type_t *fun
     if (args) LIST_FOR_EACH_ENTRY( arg, args, const var_t, entry )
     {
         print_file(file, 2, "%s", "");
-        write_type_left( file, (type_t *)arg->declspec.type, NAME_DEFAULT, TRUE );
+        write_decltype_left( file, (decl_type_t *)&arg->declspec, NAME_DEFAULT, TRUE );
         if (needs_space_after( arg->declspec.type )) fputc( ' ', file );
         if (is_array( arg->declspec.type ) && !type_array_is_decl_as_ptr( arg->declspec.type )) fputc( '*', file );
 
@@ -4862,10 +4865,11 @@ int write_expr_eval_routines(FILE *file, const char *iface)
         }
         else
         {
+            decl_type_t decltype;
             print_file(file, 1, "%s", "");
-            write_type_left(file, (type_t *)eval->cont_type, NAME_DEFAULT, TRUE);
+            write_decltype_left(file, init_decltype(&decltype, (type_t *)eval->cont_type), NAME_DEFAULT, TRUE);
             fprintf(file, " *%s = (", var_name);
-            write_type_left(file, (type_t *)eval->cont_type, NAME_DEFAULT, TRUE);
+            write_decltype_left(file, init_decltype(&decltype, (type_t *)eval->cont_type), NAME_DEFAULT, TRUE);
             fprintf(file, " *)(pStubMsg->StackTop - %u);\n", eval->baseoff);
         }
         print_file(file, 1, "pStubMsg->Offset = 0;\n"); /* FIXME */

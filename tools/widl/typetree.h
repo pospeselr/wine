@@ -258,6 +258,7 @@ static inline expr_t *type_array_get_variance(const type_t *type)
     return type->details.array.length_is;
 }
 
+/* TODO: should be decltype */
 static inline type_t *type_array_get_element(const type_t *type)
 {
     type = type_get_real_type(type);
@@ -284,6 +285,7 @@ static inline int type_is_alias(const type_t *type)
     return type->is_alias;
 }
 
+/* TODO: should be decltype */
 static inline type_t *type_alias_get_aliasee(const type_t *type)
 {
     assert(type_is_alias(type));
@@ -297,13 +299,11 @@ static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)
     return type->details.coclass.ifaces;
 }
 
-/* TODO: this may need to return a decltype */
-/* in fact it says get_ref so yeah */
-static inline type_t *type_pointer_get_ref(const type_t *type)
+static inline decl_type_t *type_pointer_get_ref(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_POINTER);
-    return type->details.pointer.ref.type;
+    return (decl_type_t*)&type->details.pointer.ref;
 }
 
 static inline unsigned char type_pointer_get_default_fc(const type_t *type)
@@ -313,6 +313,7 @@ static inline unsigned char type_pointer_get_default_fc(const type_t *type)
     return type->details.pointer.def_fc;
 }
 
+/* TODO: field should be decl_type_t I think */
 static inline type_t *type_bitfield_get_field(const type_t *type)
 {
     type = type_get_real_type(type);

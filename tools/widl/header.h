@@ -29,7 +29,7 @@ extern int is_attr(const attr_list_t *list, enum attr_type t);
 extern void *get_attrp(const attr_list_t *list, enum attr_type t);
 extern unsigned int get_attrv(const attr_list_t *list, enum attr_type t);
 extern const char* get_name(const var_t *v);
-extern void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly);
+extern void write_decltype_left(FILE *h, decl_type_t *dt, enum name_type name_type, int declonly);
 extern void write_type_right(FILE *h, type_t *t, int is_field);
 extern void write_type_decl(FILE *f, type_t *t, const char *name);
 extern void write_type_decl_left(FILE *f, type_t *t);
@@ -52,7 +52,7 @@ extern const type_t* get_explicit_generic_handle_type(const var_t* var);
 extern const var_t *get_func_handle_var( const type_t *iface, const var_t *func,
                                          unsigned char *explicit_fc, unsigned char *implicit_fc );
 extern int has_out_arg_or_return(const var_t *func);
-extern int is_const_decl(const var_t *var);
+extern int is_const_decltype(const decl_type_t *decltype);
 
 extern void write_serialize_functions(FILE *file, const type_t *type, const type_t *iface);
 
@@ -83,7 +83,7 @@ static inline int is_conformant_array(const type_t *t)
 
 static inline int last_ptr(const type_t *type)
 {
-    return is_ptr(type) && !is_declptr(type_pointer_get_ref(type));
+    return is_ptr(type) && !is_declptr(type_pointer_get_ref(type)->type);
 }
 
 static inline int last_array(const type_t *type)
@@ -102,7 +102,7 @@ static inline int is_context_handle(const type_t *type)
     const type_t *t;
     for (t = type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t))
+         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t)->type)
         if (is_attr(t->attrs, ATTR_CONTEXTHANDLE))
             return 1;
     return 0;

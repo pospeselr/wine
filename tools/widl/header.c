@@ -65,6 +65,7 @@ static void write_line(FILE *f, int delta, const char *fmt, ...)
 
 int is_ptrchain_attr(const var_t *var, enum attr_type t)
 {
+    /* TODO: handle const and inlnie here (verify they aren't being passed in) */
     if (is_attr(var->attrs, t))
         return 1;
     else
@@ -77,7 +78,7 @@ int is_ptrchain_attr(const var_t *var, enum attr_type t)
             else if (type_is_alias(type))
                 type = type_alias_get_aliasee(type);
             else if (is_ptr(type))
-                type = type_pointer_get_ref(type);
+                type = type_pointer_get_ref(type)->type;
             else return 0;
         }
     }
@@ -294,17 +295,19 @@ static void write_pointer_left(FILE *h, type_t *ref)
     fprintf(h, "*");
 }
 
-void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
+void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int declonly)
 {
   const char *name;
+  type_t *t = dt->type;
 
   if (!h) return;
 
   name = type_get_name(t, name_type);
 
-  if (is_attr(t->attrs, ATTR_CONST) &&
-      (type_is_alias(t) || !is_ptr(t)))
+  if (is_const_decltype(dt) &&
+      (type_is_alias(t) || !is_ptr(t))) {
     fprintf(h, "const ");
+  }
 
   if (type_is_alias(t)) fprintf(h, "%s", t->name);
   else {
@@ -351,9 +354,14 @@ void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
         break;
       case TYPE_POINTER:
       {
-        write_type_left(h, type_pointer_get_ref(t), name_type, declonly);
-        write_pointer_left(h, type_pointer_get_ref(t));
-        if (is_attr(t->attrs, ATTR_CONST)) fprintf(h, "const ");
+        write_decltype_left(h, type_pointer_get_ref(t), name_type, declonly);
+        /* TODO: write_pointer_left should handle decltype */
+        write_pointer_left(h, type_pointer_get_ref(t)->type);
+        /* TODO: read decltype */
+        if (is_attr(t->attrs, ATTR_CONST)) {
+          /* TODO: const should not be in the attrs here, should be in the decl_type */
+          fprintf(h, "const ");
+        }
         break;
       }
       case TYPE_ARRAY:
@@ -361,7 +369,9 @@ void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
           fprintf(h, "%s", t->name);
         else
         {
-          write_type_left(h, type_array_get_element(t), name_type, declonly);
+          /* TODO: make this return decltype */
+          decl_type_t dt;
+          write_decltype_left(h, init_decltype(&dt, type_array_get_element(t)), name_type, declonly);
           if (type_array_is_decl_as_ptr(t))
             write_pointer_left(h, type_array_get_element(t));
         }
@@ -423,7 +433,11 @@ void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
         fprintf(h, "void");
         break;
       case TYPE_BITFIELD:
-        write_type_left(h, type_bitfield_get_field(t), name_type, declonly);
+        {
+          decl_type_t dt;
+          /* TODO: bitfield should have decl_type_t most likely in case the bit is const? */
+          write_decltype_left(h, init_decltype(&dt, type_bitfield_get_field(t)), name_type, declonly);
+        }
         break;
       case TYPE_ALIAS:
       case TYPE_FUNCTION:
@@ -431,7 +445,7 @@ void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
         assert(0);
         break;
     }
-  }
+  }  
 }
 
 void write_type_right(FILE *h, type_t *t, int is_field)
@@ -461,7 +475,7 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   }
   case TYPE_POINTER:
   {
-    type_t *ref = type_pointer_get_ref(t);
+    type_t *ref = type_pointer_get_ref(t)->type;
     if (!type_is_alias(ref) && is_array(ref) && !type_array_is_decl_as_ptr(ref))
       fprintf(h, ")");
     write_type_right(h, ref, FALSE);
@@ -485,6 +499,7 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   }
 }
 
+/* TODO: this func needs to deal with decltypes */
 static void write_type_v(FILE *h, type_t *t, int is_field, int declonly, const char *name)
 {
   type_t *pt = NULL;
@@ -493,22 +508,29 @@ static void write_type_v(FILE *h, type_t *t, int is_field, int declonly, const c
   if (!h) return;
 
   if (t) {
-    for (pt = t; is_ptr(pt); pt = type_pointer_get_ref(pt), ptr_level++)
+    for (pt = t; is_ptr(pt); pt = type_pointer_get_ref(pt)->type, ptr_level++)
       ;
 
     if (type_get_type_detect_alias(pt) == TYPE_FUNCTION) {
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
+      /* TODO: get inline attr from decltype */
       if (is_attr(pt->attrs, ATTR_INLINE)) fprintf(h, "inline ");
-      write_type_left(h, type_function_get_rettype(pt), NAME_DEFAULT, declonly);
+      {
+        /* TODO: this function needs a decltype equivalent */
+        decl_type_t dt;
+        write_decltype_left(h, init_decltype(&dt, type_function_get_rettype(pt)), NAME_DEFAULT, declonly); 
+      }
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
       if (callconv) fprintf(h, "%s ", callconv);
       for (i = 0; i < ptr_level; i++)
         fputc('*', h);
-    } else
-      write_type_left(h, t, NAME_DEFAULT, declonly);
+    } else {
+      decl_type_t dt;
+      write_decltype_left(h, init_decltype(&dt, t), NAME_DEFAULT, declonly);
+    }
   }
 
   if (name) fprintf(h, "%s%s", !t || needs_space_after(t) ? " " : "", name );
@@ -534,6 +556,7 @@ static void write_type_def_or_decl(FILE *f, type_t *t, int field, const char *na
   write_type_v(f, t, field, FALSE, name);
 }
 
+/* TODO: take decltype */
 static void write_type_definition(FILE *f, type_t *t)
 {
     int in_namespace = t->namespace && !is_global_namespace(t->namespace);
@@ -545,14 +568,20 @@ static void write_type_definition(FILE *f, type_t *t)
         write_namespace_start(f, t->namespace);
     }
     indent(f, 0);
-    write_type_left(f, t, NAME_DEFAULT, FALSE);
+    {
+      decl_type_t dt;
+      write_decltype_left(f, init_decltype(&dt, t), NAME_DEFAULT, FALSE);
+    }
     fprintf(f, ";\n");
     if(in_namespace) {
         t->written = save_written;
         write_namespace_end(f, t->namespace);
         fprintf(f, "extern \"C\" {\n");
         fprintf(f, "#else\n");
-        write_type_left(f, t, NAME_C, FALSE);
+        {
+          decl_type_t dt;
+          write_decltype_left(f, init_decltype(&dt, t), NAME_C, FALSE);
+        }
         fprintf(f, ";\n");
         fprintf(f, "#endif\n\n");
     }
@@ -563,9 +592,11 @@ void write_type_decl(FILE *f, type_t *t, const char *name)
   write_type_v(f, t, FALSE, TRUE, name);
 }
 
+/* TODO: take decl_type */
 void write_type_decl_left(FILE *f, type_t *t)
 {
-  write_type_left(f, t, NAME_DEFAULT, TRUE);
+  decl_type_t dt;
+  write_decltype_left(f, init_decltype(&dt, t), NAME_DEFAULT, TRUE);
 }
 
 static int user_type_registered(const char *name)
@@ -603,7 +634,7 @@ unsigned int get_context_handle_offset( const type_t *type )
     while (!is_attr( type->attrs, ATTR_CONTEXTHANDLE ))
     {
         if (type_is_alias( type )) type = type_alias_get_aliasee( type );
-        else if (is_ptr( type )) type = type_pointer_get_ref( type );
+        else if (is_ptr( type )) type = type_pointer_get_ref( type )->type;
         else error( "internal error: %s is not a context handle\n", type->name );
     }
     LIST_FOR_EACH_ENTRY( ch, &context_handle_list, context_handle_t, entry )
@@ -623,7 +654,7 @@ unsigned int get_generic_handle_offset( const type_t *type )
     while (!is_attr( type->attrs, ATTR_HANDLE ))
     {
         if (type_is_alias( type )) type = type_alias_get_aliasee( type );
-        else if (is_ptr( type )) type = type_pointer_get_ref( type );
+        else if (is_ptr( type )) type = type_pointer_get_ref( type )->type;
         else error( "internal error: %s is not a generic handle\n", type->name );
     }
     LIST_FOR_EACH_ENTRY( gh, &generic_handle_list, generic_handle_t, entry )
@@ -703,7 +734,7 @@ void check_for_additional_prototype_types(type_t *type)
     if (type_is_alias(type))
       type = type_alias_get_aliasee(type);
     else if (is_ptr(type))
-      type = type_pointer_get_ref(type);
+      type = type_pointer_get_ref(type)->type;
     else if (is_array(type))
       type = type_array_get_element(type);
     else
@@ -793,34 +824,26 @@ static void write_typedef(FILE *header, type_t *type)
   fprintf(header, ";\n");
 }
 
-/* TODO: ths should take in a declspec so the ptr bs works again */
-int is_const_decl(const var_t *var)
+int is_const_decltype(const decl_type_t *decltype)
 {
-  assert(var != NULL);
-
-  return var->declspec.typequalifier == TYPE_QUALIFIER_CONST;
-
-#if 0  
-  const type_t *t;
+  assert(decltype != NULL);
+  
   /* strangely, MIDL accepts a const attribute on any pointer in the
   * declaration to mean that data isn't being instantiated. this appears
   * to be a bug, but there is no benefit to being incompatible with MIDL,
   * so we'll do the same thing */
-  for (t = var->type; ; )
-  {
-    if (is_attr(t->attrs, ATTR_CONST))
-      return TRUE;
-    else if (is_ptr(t))
-      t = type_pointer_get_ref(t);
-    else break;
+  if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
+    return TRUE;
+  }
+  else if (is_ptr(decltype->type)) {
+    return is_const_decltype(type_pointer_get_ref(decltype->type));
   }
   return FALSE;
-#endif  
 }
 
 static void write_declaration(FILE *header, const var_t *v)
 {
-  if (is_const_decl(v) && v->eval)
+  if (is_const_decltype(&v->declspec) && v->eval)
   {
     fprintf(header, "#define %s (", v->name);
     write_expr(header, v->eval, 0, 1, NULL, NULL, "");
@@ -859,7 +882,7 @@ const type_t* get_explicit_generic_handle_type(const var_t* var)
     const type_t *t;
     for (t = var->declspec.type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t))
+         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t)->type)
         if ((type_get_type_detect_alias(t) != TYPE_BASIC || type_basic_get_type(t) != TYPE_BASIC_HANDLE) &&
             is_attr(t->attrs, ATTR_HANDLE))
             return t;
