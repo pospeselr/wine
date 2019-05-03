@@ -1763,6 +1763,7 @@ static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *decl_spec, dec
   {
     var_t *var = declare_var(attrs, decl_spec, decl, 0);
     parser_warning("var name : %s\n", var->name);
+    parser_warning("var const : %d\n", var->declspec.typequalifier);
     var_list = append_var(var_list, var);
     free(decl);
   }

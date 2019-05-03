@@ -43,7 +43,7 @@ user_type_list_t user_type_list = LIST_INIT(user_type_list);
 context_handle_list_t context_handle_list = LIST_INIT(context_handle_list);
 generic_handle_list_t generic_handle_list = LIST_INIT(generic_handle_list);
 
-static void write_type_def_or_decl(FILE *f, type_t *v, int field, const char *name);
+static void write_type_def_or_decl(FILE *f, decl_type_t *dt, int field, const char *name);
 
 static void indent(FILE *h, int delta)
 {
@@ -253,7 +253,7 @@ static void write_fields(FILE *h, var_list_t *fields)
         default:
             ;
         }
-        write_type_def_or_decl(h, v->declspec.type, TRUE, name);
+        write_type_def_or_decl(h, &v->declspec, TRUE, name);
         fprintf(h, ";\n");
     }
 }
@@ -499,9 +499,10 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   }
 }
 
-/* TODO: this func needs to deal with decltypes */
-static void write_type_v(FILE *h, type_t *t, int is_field, int declonly, const char *name)
+/* TODO: what is going on here with checking for t? */
+static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, const char *name)
 {
+  type_t *t = dt->type;
   type_t *pt = NULL;
   int ptr_level = 0;
 
@@ -528,8 +529,7 @@ static void write_type_v(FILE *h, type_t *t, int is_field, int declonly, const c
       for (i = 0; i < ptr_level; i++)
         fputc('*', h);
     } else {
-      decl_type_t dt;
-      write_decltype_left(h, init_decltype(&dt, t), NAME_DEFAULT, declonly);
+      write_decltype_left(h, dt, NAME_DEFAULT, declonly);
     }
   }
 
@@ -551,9 +551,9 @@ static void write_type_v(FILE *h, type_t *t, int is_field, int declonly, const c
   }
 }
 
-static void write_type_def_or_decl(FILE *f, type_t *t, int field, const char *name)
+static void write_type_def_or_decl(FILE *f, decl_type_t *dt, int field, const char *name)
 {
-  write_type_v(f, t, field, FALSE, name);
+  write_type_v(f, dt, field, FALSE, name);
 }
 
 /* TODO: take decltype */
@@ -587,9 +587,11 @@ static void write_type_definition(FILE *f, type_t *t)
     }
 }
 
+/* TODO: takes a decltype instead of type ? */
 void write_type_decl(FILE *f, type_t *t, const char *name)
 {
-  write_type_v(f, t, FALSE, TRUE, name);
+  decl_type_t dt;
+  write_type_v(f, init_decltype(&dt, t), FALSE, TRUE, name);
 }
 
 /* TODO: take decl_type */
@@ -819,13 +821,18 @@ static void write_generic_handle_routines(FILE *header)
 
 static void write_typedef(FILE *header, type_t *type)
 {
+  /* TODO; type_alias_get_aliasee needs to return a decltype */
+  decl_type_t dt;
   fprintf(header, "typedef ");
-  write_type_def_or_decl(header, type_alias_get_aliasee(type), FALSE, type->name);
+  write_type_def_or_decl(header, init_decltype(&dt, type_alias_get_aliasee(type)), FALSE, type->name);
   fprintf(header, ";\n");
 }
 
 int is_const_decltype(const decl_type_t *decltype)
 {
+  parser_warning("is_const_decltype trace\n");
+  parser_warning("name : %s\n", decltype->type->name);
+  parser_warning("is const: %d\n", decltype->typequalifier == TYPE_QUALIFIER_CONST);
   assert(decltype != NULL);
   
   /* strangely, MIDL accepts a const attribute on any pointer in the
@@ -833,6 +840,7 @@ int is_const_decltype(const decl_type_t *decltype)
   * to be a bug, but there is no benefit to being incompatible with MIDL,
   * so we'll do the same thing */
   if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
+    parser_warning("is const!\n");
     return TRUE;
   }
   else if (is_ptr(decltype->type)) {
@@ -863,7 +871,7 @@ static void write_declaration(FILE *header, const var_t *v)
         fprintf(header, "extern ");
         break;
     }
-    write_type_def_or_decl(header, v->declspec.type, FALSE, v->name);
+    write_type_def_or_decl(header, (decl_spec_t*)&v->declspec, FALSE, v->name);
     fprintf(header, ";\n\n");
   }
 }
