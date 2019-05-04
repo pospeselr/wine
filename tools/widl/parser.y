@@ -1256,6 +1256,18 @@ static attr_list_t *move_attr(attr_list_t *dst, attr_list_t *src, enum attr_type
   return dst;
 }
 
+
+static attr_list_t *remove_attr(attr_list_t *lst, enum attr_type type)
+{
+	attr_t *attr;
+  LIST_FOR_EACH_ENTRY(attr, lst, attr_t, entry)
+    if (attr->type == type)
+    {
+      list_remove(&attr->entry);
+    }
+  return lst;	
+}
+
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list)
 {
   struct list *entry;
@@ -1385,7 +1397,6 @@ static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t
 
 static attr_t *make_attr(enum attr_type type)
 {
-  /* TODO: catch const in here and figure out how to pipe it into declspec */
   attr_t *a = xmalloc(sizeof(attr_t));
   a->type = type;
   a->u.ival = 0;
@@ -1515,21 +1526,31 @@ static type_t *get_array_or_ptr_ref(type_t *type)
     return NULL;
 }
 
+/* TODO: fuck fix me */
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
     type_t *chain_type;
+    decl_type_t *chain_decltype;
 
     if (!chain)
         return type;
     for (chain_type = chain; get_array_or_ptr_ref(chain_type); chain_type = get_array_or_ptr_ref(chain_type))
         ;
-
-    if (is_ptr(chain_type))
-        chain_type->details.pointer.ref.type = type;
+		
+    if (is_ptr(chain_type)) 
+        chain_decltype = &chain_type->details.pointer.ref;
     else if (is_array(chain_type))
-        chain_type->details.array.elem.type = type;
+        chain_decltype = &chain_type->details.array.elem;
     else
         assert(0);
+
+    chain_decltype->type = type;
+    (void)remove_attr;
+    // if (is_attr(type->attrs, ATTR_CONST)) {
+
+    //   type->attrs = remove_attr(type->attrs, ATTR_CONST);
+    //   chain_decltype->typequalifier = TYPE_QUALIFIER_CONST;
+    // }
 
     return chain;
 }
@@ -1576,9 +1597,29 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   }
 
   /* add type onto the end of the pointers in pident->type */
-  v->declspec = *declspec;
   v->declspec.type = append_chain_type(decl ? decl->type : NULL, type);
+  v->declspec.stgclass = declspec->stgclass;
   v->attrs = attrs;
+
+  /* if the var type is a pointer, we need to move the type qualifier to the pointee's decltype */
+  if (declspec->typequalifier != TYPE_QUALIFIER_NONE)
+  {
+    if (v->declspec.type != type)
+    {
+      if (is_ptr(v->declspec.type))
+      {
+        v->declspec.type->details.pointer.ref.typequalifier = declspec->typequalifier;
+      }
+      else if(is_array(v->declspec.type))
+      {
+        v->declspec.type->details.array.elem.typequalifier = declspec->typequalifier;
+      }
+    }
+    else
+    {
+      v->declspec.typequalifier = declspec->typequalifier;
+    }  
+  }
 
   /* check for pointer attribute being applied to non-pointer, non-array
    * type */
@@ -1744,10 +1785,12 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   if (decl->bits)
     v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
 
+  /* TODO: kill these parser warnings */
   parser_warning("declare_var\n");
   parser_warning("var name: %s\n", v->name);
   parser_warning("type name: %s\n", v->declspec.type->name);
-  parser_warning(" const : %d\n", declspec->typequalifier == TYPE_QUALIFIER_CONST);
+  parser_warning(" const : %d\n", v->declspec.typequalifier == TYPE_QUALIFIER_CONST);
+  parser_warning(" is_ptr: %d\n", is_ptr(v->declspec.type));
 
   return v;
 }
@@ -3033,7 +3076,7 @@ static statement_t *make_statement_declaration(var_t *var)
     stmt->u.var = var;
     if (var->declspec.stgclass == STG_EXTERN && var->eval)
         warning("'%s' initialised and declared extern\n", var->name);
-    if (is_const_decltype(&var->declspec))
+    if (is_const_decl(var))
     {
         if (var->eval)
             reg_const(var);

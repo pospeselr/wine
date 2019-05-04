@@ -178,12 +178,12 @@ type_t *type_new_function(var_list_t *args)
     return t;
 }
 
-/* TODO: how is const pointer formed */
+/* TODO: this is wrong, the const attribute needs to be on a decltype with an instance of the type pointer :/ */
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs)
 {
     type_t *t = make_type(TYPE_POINTER);
     t->details.pointer.def_fc = pointer_default;
-    t->details.pointer.ref.type = ref;
+    init_decltype(&t->details.pointer.ref, ref);
     t->attrs = attrs;
     return t;
 }

@@ -304,9 +304,9 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
 
   name = type_get_name(t, name_type);
 
-  if (is_const_decltype(dt) &&
+  if ((dt->typequalifier == TYPE_QUALIFIER_CONST) &&
       (type_is_alias(t) || !is_ptr(t))) {
-    fprintf(h, "const ");
+    fprintf(h, "Fconst ");
   }
 
   if (type_is_alias(t)) fprintf(h, "%s", t->name);
@@ -355,13 +355,12 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
       case TYPE_POINTER:
       {
         write_decltype_left(h, type_pointer_get_ref(t), name_type, declonly);
-        /* TODO: write_pointer_left should handle decltype */
         write_pointer_left(h, type_pointer_get_ref(t)->type);
-        /* TODO: read decltype */
-        if (is_attr(t->attrs, ATTR_CONST)) {
-          /* TODO: const should not be in the attrs here, should be in the decl_type */
-          fprintf(h, "const ");
+
+        if (dt->typequalifier == TYPE_QUALIFIER_CONST) {
+          fprintf(h, "Bconst ");
         }
+
         break;
       }
       case TYPE_ARRAY:
@@ -828,30 +827,27 @@ static void write_typedef(FILE *header, type_t *type)
   fprintf(header, ";\n");
 }
 
-int is_const_decltype(const decl_type_t *decltype)
+int is_const_decl(const var_t *var)
 {
-  parser_warning("is_const_decltype trace\n");
-  parser_warning("name : %s\n", decltype->type->name);
-  parser_warning("is const: %d\n", decltype->typequalifier == TYPE_QUALIFIER_CONST);
-  assert(decltype != NULL);
-  
+  const decl_type_t *dt;
   /* strangely, MIDL accepts a const attribute on any pointer in the
   * declaration to mean that data isn't being instantiated. this appears
   * to be a bug, but there is no benefit to being incompatible with MIDL,
   * so we'll do the same thing */
-  if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
-    parser_warning("is const!\n");
-    return TRUE;
-  }
-  else if (is_ptr(decltype->type)) {
-    return is_const_decltype(type_pointer_get_ref(decltype->type));
+  for (dt = &var->declspec; ;)
+  {
+    if (dt->typequalifier == TYPE_QUALIFIER_CONST)
+      return TRUE;
+    else if (is_ptr(dt->type))
+      dt = type_pointer_get_ref(dt->type);
+    else break;
   }
   return FALSE;
 }
 
 static void write_declaration(FILE *header, const var_t *v)
 {
-  if (is_const_decltype(&v->declspec) && v->eval)
+  if (is_const_decl(v) && v->eval)
   {
     fprintf(header, "#define %s (", v->name);
     write_expr(header, v->eval, 0, 1, NULL, NULL, "");
