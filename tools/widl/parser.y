@@ -1545,12 +1545,11 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         assert(0);
 
     chain_decltype->type = type;
-    (void)remove_attr;
-    // if (is_attr(type->attrs, ATTR_CONST)) {
-
-    //   type->attrs = remove_attr(type->attrs, ATTR_CONST);
-    //   chain_decltype->typequalifier = TYPE_QUALIFIER_CONST;
-    // }
+    if (is_attr(type->attrs, ATTR_CONST)) {
+      TRACE();
+      type->attrs = remove_attr(type->attrs, ATTR_CONST);
+      chain_decltype->typequalifier = TYPE_QUALIFIER_CONST;
+    }
 
     return chain;
 }
@@ -1581,6 +1580,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   type_t *func_type = decl ? decl->func_type : NULL;
   type_t *type = declspec->type;
 
+  /* TODO: function specifier as well? */
   if (is_attr(type->attrs, ATTR_INLINE))
   {
     if (!func_type)
@@ -1595,31 +1595,40 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
       t->attrs = move_attr(t->attrs, type->attrs, ATTR_INLINE);
     }
   }
+  
+  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's decltype 
+   * unless the pointee already has const type qualifier*/
 
-  /* add type onto the end of the pointers in pident->type */
-  v->declspec.type = append_chain_type(decl ? decl->type : NULL, type);
+  /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST 
+   * in this block */
+
+  if (!decl)
+  {
+    TRACE();
+    /* simplest case, no pointers to deal with here */
+    v->declspec.typequalifier = declspec->typequalifier;
+  } else {
+    /* here we're dealing with a pointerish type chain, so we need to pull
+     * the typequalifier off of the declspec and stick them in the type's attr list
+     */
+    TRACE();
+    if (declspec->typequalifier == TYPE_QUALIFIER_CONST) {
+      TRACE();
+      type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
+    }
+
+    v->declspec.type = append_chain_type(decl->type, type);
+    /* finally pull the ATTR_CONST attribute off the head of the pointerish type chain,
+     * and stick on the var's declspec */
+    if (is_attr(v->declspec.type->attrs, ATTR_CONST)) {
+      TRACE();
+      v->declspec.type->attrs = remove_attr(v->declspec.type->attrs, ATTR_CONST);
+      v->declspec.typequalifier = TYPE_QUALIFIER_CONST;
+    }
+  } 
+
   v->declspec.stgclass = declspec->stgclass;
   v->attrs = attrs;
-
-  /* if the var type is a pointer, we need to move the type qualifier to the pointee's decltype */
-  if (declspec->typequalifier != TYPE_QUALIFIER_NONE)
-  {
-    if (v->declspec.type != type)
-    {
-      if (is_ptr(v->declspec.type))
-      {
-        v->declspec.type->details.pointer.ref.typequalifier = declspec->typequalifier;
-      }
-      else if(is_array(v->declspec.type))
-      {
-        v->declspec.type->details.array.elem.typequalifier = declspec->typequalifier;
-      }
-    }
-    else
-    {
-      v->declspec.typequalifier = declspec->typequalifier;
-    }  
-  }
 
   /* check for pointer attribute being applied to non-pointer, non-array
    * type */

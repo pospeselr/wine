@@ -306,7 +306,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
 
   if ((dt->typequalifier == TYPE_QUALIFIER_CONST) &&
       (type_is_alias(t) || !is_ptr(t))) {
-    fprintf(h, "Fconst ");
+    fprintf(h, "const ");
   }
 
   if (type_is_alias(t)) fprintf(h, "%s", t->name);
@@ -358,7 +358,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
         write_pointer_left(h, type_pointer_get_ref(t)->type);
 
         if (dt->typequalifier == TYPE_QUALIFIER_CONST) {
-          fprintf(h, "Bconst ");
+          fprintf(h, "const ");
         }
 
         break;
