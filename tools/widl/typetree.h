@@ -285,11 +285,10 @@ static inline int type_is_alias(const type_t *type)
     return type->is_alias;
 }
 
-/* TODO: should be decltype */
-static inline type_t *type_alias_get_aliasee(const type_t *type)
+static inline decl_type_t *type_alias_get_aliasee(const type_t *type)
 {
     assert(type_is_alias(type));
-    return type->details.alias.decltype.type;
+    return (decl_type_t*)&type->details.alias.decltype;
 }
 
 static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)

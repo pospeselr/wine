@@ -1601,7 +1601,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
 
   /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST 
    * in this block */
-
+  /* TODO: maybe the original make_decl_spec should say the same since we're having to re-insert ATTR_CONST here */
   if (!decl)
   {
     TRACE();
@@ -1643,7 +1643,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     {
       ptr_attr = get_attrv(ptr->attrs, ATTR_POINTERTYPE);
       if (!ptr_attr && type_is_alias(ptr))
-        ptr = type_alias_get_aliasee(ptr);
+        ptr = type_alias_get_aliasee(ptr)->type;
       else
         break;
     }
@@ -2029,7 +2029,7 @@ void add_incomplete(type_t *t)
 static void fix_type(type_t *t)
 {
   if (type_is_alias(t) && is_incomplete(t)) {
-    type_t *ot = type_alias_get_aliasee(t);
+    type_t *ot = type_alias_get_aliasee(t)->type;
     fix_type(ot);
     if (type_get_type_detect_alias(ot) == TYPE_STRUCT ||
         type_get_type_detect_alias(ot) == TYPE_UNION ||
