@@ -201,7 +201,7 @@ type_t* decltype_new_alias(const decl_type_t *decltype, const char *name, struct
     a->name = xstrdup(name);
     a->namespace = namespace;
     a->attrs = NULL;
-    a->details.alias.decltype = *decltype;
+    a->details.alias.aliasee = *decltype;
     a->is_alias = TRUE;
     init_loc_info(&a->loc_info);
 

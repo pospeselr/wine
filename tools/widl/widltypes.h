@@ -411,7 +411,7 @@ struct bitfield_details
 
 struct typedef_details
 {
-  struct _decl_spec_t decltype;
+  struct _decl_spec_t aliasee;
 };
 
 #define HASHMAX 64
