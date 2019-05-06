@@ -60,15 +60,15 @@ static void fix_incomplete_types(type_t *complete_type);
 static str_list_t *append_str(str_list_t *list, char *str);
 static attr_list_t *append_attr(attr_list_t *list, attr_t *attr);
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list);
-static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass);
-static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
+static decl_type_t *make_decl_spec(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass);
+static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr);
 static type_t *append_array(type_t *chain, expr_t *expr);
-static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *decl_spec, const declarator_t *decl, int top);
-static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *decl_spec, declarator_list_t *decls);
+static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const declarator_t *decl, int top);
+static var_list_t *set_var_types(attr_list_t *attrs, decl_type_t *decltype, declarator_list_t *decls);
 static ifref_list_t *append_ifref(ifref_list_t *list, ifref_t *iface);
 static ifref_t *make_ifref(type_t *iface);
 static var_list_t *append_var_list(var_list_t *list, var_list_t *vars);
@@ -79,7 +79,7 @@ static typelib_t *make_library(const char *name, const attr_list_t *attrs);
 static type_t *append_chain_type(type_t *chain, type_t *type);
 static warning_list_t *append_warning(warning_list_t *, int);
 
-static type_t *reg_typedefs(decl_spec_t *decl_spec, var_list_t *names, attr_list_t *attrs);
+static type_t *reg_typedefs(decl_type_t *decltype, var_list_t *names, attr_list_t *attrs);
 static type_t *find_type_or_error(const char *name, int t);
 static type_t *find_type_or_error2(char *name, int t);
 
@@ -157,7 +157,7 @@ static typelib_t *current_typelib;
 	interface_info_t ifinfo;
 	typelib_t *typelib;
 	struct _import_t *import;
-	struct _decl_spec_t *declspec;
+	struct _decl_type_t *declspec;
 	enum storage_class stgclass;
 }
 
@@ -1305,7 +1305,8 @@ static attr_list_t *map_attrs(const attr_list_t *list, map_attrs_filter_t filter
   return new_list;
 }
 
-static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass)
+/* TODO: probably bring back the original implementation here */
+static decl_type_t *make_decl_spec(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass)
 {
   enum type_qualifier typequalifier = TYPE_QUALIFIER_NONE;
   enum function_specifier funcspecifier = FUNCTION_SPECIFIER_NONE;
@@ -1323,9 +1324,9 @@ static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t 
   return make_decl_spec2(type, left, right, stgclass, typequalifier, funcspecifier);
 }
 
-static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
 {
-  decl_spec_t *declspec = left ? left : right;
+  decl_type_t *declspec = left ? left : right;
 
   if (!declspec)
   {
@@ -1569,7 +1570,8 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl,
+/* TODO: declspec -> decltype */
+static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1806,22 +1808,23 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   return v;
 }
 
-static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *decl_spec, declarator_list_t *decls)
+static var_list_t *set_var_types(attr_list_t *attrs, decl_type_t *decltype, declarator_list_t *decls)
 {
   declarator_t *decl, *next;
   var_list_t *var_list = NULL;
 
-  parser_warning("type name : %s\n", decl_spec->type->name);
+  /* TODO: kill these parser warnings */
+  parser_warning("type name : %s\n", decltype->type->name);
   
   LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
   {
-    var_t *var = declare_var(attrs, decl_spec, decl, 0);
+    var_t *var = declare_var(attrs, decltype, decl, 0);
     parser_warning("var name : %s\n", var->name);
     parser_warning("var const : %d\n", var->declspec.typequalifier);
     var_list = append_var(var_list, var);
     free(decl);
   }
-  free(decl_spec);
+  free(decltype);
   return var_list;
 }
 
@@ -2052,6 +2055,7 @@ static void fix_incomplete(void)
   }
 }
 
+/* TODO: see how this behaves now that duptype is mostly gone */
 static void fix_incomplete_types(type_t *complete_type)
 {
   struct typenode *tn, *next;
@@ -2067,10 +2071,10 @@ static void fix_incomplete_types(type_t *complete_type)
   }
 }
 
-static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, attr_list_t *attrs)
+static type_t *reg_typedefs(decl_type_t *decltype, declarator_list_t *decls, attr_list_t *attrs)
 {
   const declarator_t *decl;
-  type_t *type = decl_spec->type;
+  type_t *type = decltype->type;
 
   if (is_attr(attrs, ATTR_UUID) && !is_attr(attrs, ATTR_PUBLIC))
     attrs = append_attr( attrs, make_attr(ATTR_PUBLIC) );
@@ -2099,9 +2103,9 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
       var_t *name;
 
       parser_warning("name : %s\n", decl->var->name);
-      parser_warning(" decl_spec->stgclass : %d\n", decl_spec->stgclass);
-      parser_warning(" decl_spec->typequalifier : %d\n", decl_spec->typequalifier);
-      parser_warning(" decl_spec->funcspecifier : %d\n", decl_spec->funcspecifier);
+      parser_warning(" decltype->stgclass : %d\n", decltype->stgclass);
+      parser_warning(" decltype->typequalifier : %d\n", decltype->typequalifier);
+      parser_warning(" decltype->funcspecifier : %d\n", decltype->funcspecifier);
 
       cur = find_type(decl->var->name, current_namespace, 0);
 
@@ -2119,7 +2123,7 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
                     cur->name, cur->loc_info.input_name,
                     cur->loc_info.line_number);
 
-      name = declare_var(attrs, decl_spec, decl, 0);
+      name = declare_var(attrs, decltype, decl, 0);
       cur = decltype_new_alias(&name->declspec, name->name, current_namespace);
       cur->attrs = attrs;
 

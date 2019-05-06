@@ -863,7 +863,7 @@ static void write_declaration(FILE *header, const var_t *v)
         fprintf(header, "extern ");
         break;
     }
-    write_type_def_or_decl(header, (decl_spec_t*)&v->declspec, FALSE, v->name);
+    write_type_def_or_decl(header, (decl_type_t*)&v->declspec, FALSE, v->name);
     fprintf(header, ";\n\n");
   }
 }

@@ -113,7 +113,7 @@ static inline type_t *type_function_get_rettype(const type_t *type)
     return type_function_get_retval(type)->declspec.type;
 }
 
-static inline decl_spec_t* type_function_get_retdeclspec(const type_t *type)
+static inline decl_type_t* type_function_get_retdeclspec(const type_t *type)
 {
     return &(type_function_get_retval(type)->declspec);
 }

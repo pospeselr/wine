@@ -40,9 +40,7 @@ typedef struct _attr_t attr_t;
 typedef struct _expr_t expr_t;
 typedef struct _type_t type_t;
 typedef struct _var_t var_t;
-/* TODO: purge decl_spec and replace with decl_type */
-typedef struct _decl_spec_t decl_spec_t;
-typedef decl_spec_t decl_type_t;
+typedef struct _decl_type_t decl_type_t;
 typedef struct _declarator_t declarator_t;
 typedef struct _ifref_t ifref_t;
 typedef struct _typelib_entry_t typelib_entry_t;
@@ -308,7 +306,7 @@ struct str_list_entry_t
     struct list entry;
 };
 
-struct _decl_spec_t
+struct _decl_type_t
 {
   struct _type_t *type;
   enum storage_class stgclass;
@@ -379,7 +377,7 @@ struct array_details
 {
   expr_t *size_is;
   expr_t *length_is;
-  struct _decl_spec_t elem;
+  struct _decl_type_t elem;
   unsigned int dim;
   unsigned char ptr_def_fc;
   unsigned char declptr; /* if declared as a pointer */
@@ -399,7 +397,7 @@ struct basic_details
 
 struct pointer_details
 {
-  struct _decl_spec_t ref;
+  struct _decl_type_t ref;
   unsigned char def_fc;
 };
 
@@ -411,7 +409,7 @@ struct bitfield_details
 
 struct typedef_details
 {
-  struct _decl_spec_t aliasee;
+  struct _decl_type_t aliasee;
 };
 
 #define HASHMAX 64
@@ -478,7 +476,8 @@ struct _type_t {
 
 struct _var_t {
   char *name;
-  decl_spec_t declspec;
+  /* TODO: rename declspec -> decltype */
+  decl_type_t declspec;
   attr_list_t *attrs;
   expr_t *eval;
   unsigned int procstring_offset;
