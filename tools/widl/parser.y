@@ -1522,7 +1522,7 @@ static type_t *get_array_or_ptr_ref(type_t *type)
     if (is_ptr(type))
         return type_pointer_get_ref(type)->type;
     else if (is_array(type))
-        return type_array_get_element(type);
+        return type_array_get_element(type)->type;
     return NULL;
 }
 
@@ -1654,6 +1654,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
+      
       if (!ptr_attr && top && (*pt)->details.pointer.def_fc != FC_RP)
       {
         /* FIXME: this is a horrible hack to cope with the issue that we
@@ -1680,7 +1681,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
         if (is_ptr(t))
             t = type_pointer_get_ref(t)->type;
         else if (is_array(t))
-            t = type_array_get_element(t);
+            t = type_array_get_element(t)->type;
         else
             break;
     }
@@ -1717,7 +1718,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
           error_loc("%s: cannot specify size_is for an already sized array\n", v->name);
         else
           *ptype = type_new_array((*ptype)->name,
-                                  type_array_get_element(*ptype), FALSE,
+                                  type_array_get_element(*ptype)->type, FALSE,
                                   0, dim, NULL, 0);
       }
       else if (is_ptr(*ptype))
@@ -1745,8 +1746,9 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
     {
       if (is_array(*ptype))
       {
+        /* TODO: type new array maybe should take a decltype rather than a type? */
         *ptype = type_new_array((*ptype)->name,
-                                type_array_get_element(*ptype),
+                                type_array_get_element(*ptype)->type,
                                 type_array_is_decl_as_ptr(*ptype),
                                 type_array_get_dim(*ptype),
                                 type_array_get_conformance(*ptype),
@@ -2765,7 +2767,7 @@ static void check_field_common(const type_t *container_type,
             more_to_do = TRUE;
             break;
         case TGT_ARRAY:
-            type = type_array_get_element(type);
+            type = type_array_get_element(type)->type;
             more_to_do = TRUE;
             break;
         case TGT_USER_TYPE:

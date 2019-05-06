@@ -258,12 +258,14 @@ static inline expr_t *type_array_get_variance(const type_t *type)
     return type->details.array.length_is;
 }
 
-/* TODO: should be decltype */
-static inline type_t *type_array_get_element(const type_t *type)
+/* TODO: add functions like type_array_get_element_type (and same for pointer and aliasee) so we can
+ * remove all of the ->type we've had to add all over the place */
+
+static inline decl_type_t *type_array_get_element(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_ARRAY);
-    return type->details.array.elem.type;
+    return (decl_type_t*)&type->details.array.elem;
 }
 
 static inline int type_array_is_decl_as_ptr(const type_t *type)
