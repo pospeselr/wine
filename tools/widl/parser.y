@@ -1768,6 +1768,9 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
       error_loc("%s: too many expressions in length_is attribute\n", v->name);
   }
 
+  /* TODO: this should also be refactored so that we're pulling the ATTR_CONST off the return type
+   * and then populating the function's return type's decltype, rather than moving it around */
+
   /* v->type is currently pointing to the type on the left-side of the
    * declaration, so we need to fix this up so that it is the return type of the
    * function and make v->type point to the function side of the declaration */
@@ -1775,12 +1778,20 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
   {
     type_t *ft, *t;
     type_t *return_type = v->declspec.type;
+    enum type_qualifier typequalifier = v->declspec.typequalifier;
+
     v->declspec.type = func_type;
+    v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
     for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref(ft)->type)
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
     ft->details.function->retval->declspec.type = return_type;
+    ft->details.function->retval->declspec.typequalifier = typequalifier;
+
+    parser_warning("function retval const : %d\n", typequalifier == TYPE_QUALIFIER_CONST);
+
+
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
     for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref(t)->type)
