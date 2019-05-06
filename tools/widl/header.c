@@ -515,11 +515,7 @@ static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, c
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
       /* TODO: get inline attr from decltype */
       if (is_attr(pt->attrs, ATTR_INLINE)) fprintf(h, "inline ");
-      {
-        /* TODO: this function needs a decltype equivalent */
-        decl_type_t dt;
-        write_decltype_left(h, init_decltype(&dt, type_function_get_rettype(pt)), NAME_DEFAULT, declonly); 
-      }
+      write_decltype_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly); 
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
       if (callconv) fprintf(h, "%s ", callconv);

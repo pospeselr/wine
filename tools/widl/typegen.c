@@ -4648,7 +4648,7 @@ void declare_stub_args( FILE *file, int indent, const var_t *func )
             }
 
             print_file(file, indent, "%s", "");
-            write_type_decl_left(file, var->declspec.type);
+            write_decltype_decl_left(file, (decl_type_t*)&var->declspec);
             fprintf(file, " ");
             if (type_get_type(var->declspec.type) == TYPE_ARRAY &&
                 !type_array_is_decl_as_ptr(var->declspec.type)) {
@@ -4963,7 +4963,8 @@ error:
 void write_client_call_routine( FILE *file, const type_t *iface, const var_t *func,
                                 const char *prefix, unsigned int proc_offset )
 {
-    type_t *rettype = type_function_get_rettype( func->declspec.type );
+    decl_type_t *retdecltype = type_function_get_retdeclspec(func->declspec.type);
+    type_t *rettype = retdecltype->type;
     int has_ret = !is_void( rettype );
     const var_list_t *args = type_get_function_args( func->declspec.type );
     const var_t *arg;
@@ -5013,7 +5014,7 @@ void write_client_call_routine( FILE *file, const type_t *iface, const var_t *fu
     if (has_ret)
     {
         print_file( file, 1, "return (" );
-        write_type_decl_left(file, rettype);
+        write_decltype_decl_left(file, retdecltype);
         fprintf( file, ")%s;\n", pointer_size == 8 ? "_RetVal.Simple" : "*(LONG_PTR *)&_RetVal" );
     }
     print_file( file, 0, "}\n\n");
