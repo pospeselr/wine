@@ -1206,6 +1206,121 @@ void init_types(void)
   decl_builtin_alias("boolean", type_new_basic(TYPE_BASIC_BYTE));
 }
 
+/* TODO: remove this function */
+extern void print_attr_list(attr_list_t *list)
+{
+  const char* attr_strings[] = 
+  {
+    "ATTR_AGGREGATABLE",
+    "ATTR_ANNOTATION",
+    "ATTR_APPOBJECT",
+    "ATTR_ASYNC",
+    "ATTR_ASYNCUUID",
+    "ATTR_AUTO_HANDLE",
+    "ATTR_BINDABLE",
+    "ATTR_BROADCAST",
+    "ATTR_CALLAS",
+    "ATTR_CALLCONV",
+    "ATTR_CASE",
+    "ATTR_CODE",
+    "ATTR_COMMSTATUS",
+    "ATTR_CONST",
+    "ATTR_CONTEXTHANDLE",
+    "ATTR_CONTROL",
+    "ATTR_DECODE",
+    "ATTR_DEFAULT",
+    "ATTR_DEFAULTBIND",
+    "ATTR_DEFAULTCOLLELEM",
+    "ATTR_DEFAULTVALUE",
+    "ATTR_DEFAULTVTABLE",
+    "ATTR_DISABLECONSISTENCYCHECK",
+    "ATTR_DISPINTERFACE",
+    "ATTR_DISPLAYBIND",
+    "ATTR_DLLNAME",
+    "ATTR_DUAL",
+    "ATTR_ENABLEALLOCATE",
+    "ATTR_ENCODE",
+    "ATTR_ENDPOINT",
+    "ATTR_ENTRY",
+    "ATTR_EXPLICIT_HANDLE",
+    "ATTR_FAULTSTATUS",
+    "ATTR_FORCEALLOCATE",
+    "ATTR_HANDLE",
+    "ATTR_HELPCONTEXT",
+    "ATTR_HELPFILE",
+    "ATTR_HELPSTRING",
+    "ATTR_HELPSTRINGCONTEXT",
+    "ATTR_HELPSTRINGDLL",
+    "ATTR_HIDDEN",
+    "ATTR_ID",
+    "ATTR_IDEMPOTENT",
+    "ATTR_IGNORE",
+    "ATTR_IIDIS",
+    "ATTR_IMMEDIATEBIND",
+    "ATTR_IMPLICIT_HANDLE",
+    "ATTR_IN",
+    "ATTR_INLINE",
+    "ATTR_INPUTSYNC",
+    "ATTR_LENGTHIS",
+    "ATTR_LIBLCID",
+    "ATTR_LICENSED",
+    "ATTR_LOCAL",
+    "ATTR_MAYBE",
+    "ATTR_MESSAGE",
+    "ATTR_NOCODE",
+    "ATTR_NONBROWSABLE",
+    "ATTR_NONCREATABLE",
+    "ATTR_NONEXTENSIBLE",
+    "ATTR_NOTIFY",
+    "ATTR_NOTIFYFLAG",
+    "ATTR_OBJECT",
+    "ATTR_ODL",
+    "ATTR_OLEAUTOMATION",
+    "ATTR_OPTIMIZE",
+    "ATTR_OPTIONAL",
+    "ATTR_OUT",
+    "ATTR_PARAMLCID",
+    "ATTR_PARTIALIGNORE",
+    "ATTR_POINTERDEFAULT",
+    "ATTR_POINTERTYPE",
+    "ATTR_PROGID",
+    "ATTR_PROPGET",
+    "ATTR_PROPPUT",
+    "ATTR_PROPPUTREF",
+    "ATTR_PROXY",
+    "ATTR_PUBLIC",
+    "ATTR_RANGE",
+    "ATTR_READONLY",
+    "ATTR_REPRESENTAS",
+    "ATTR_REQUESTEDIT",
+    "ATTR_RESTRICTED",
+    "ATTR_RETVAL",
+    "ATTR_SIZEIS",
+    "ATTR_SOURCE",
+    "ATTR_STRICTCONTEXTHANDLE",
+    "ATTR_STRING",
+    "ATTR_SWITCHIS",
+    "ATTR_SWITCHTYPE",
+    "ATTR_THREADING",
+    "ATTR_TRANSMITAS",
+    "ATTR_UIDEFAULT",
+    "ATTR_USERMARSHAL",
+    "ATTR_USESGETLASTERROR",
+    "ATTR_UUID",
+    "ATTR_V1ENUM",
+    "ATTR_VARARG",
+    "ATTR_VERSION",
+    "ATTR_VIPROGID",
+    "ATTR_WIREMARSHAL",
+  };
+
+  attr_t *attr;
+  LIST_FOR_EACH_ENTRY(attr, list, attr_t, entry)
+  {
+    parser_warning(" %s\n", attr_strings[attr->type]);
+  }
+}
+
 static str_list_t *append_str(str_list_t *list, char *str)
 {
     struct str_list_entry_t *entry;
@@ -1435,13 +1550,14 @@ static expr_list_t *append_expr(expr_list_t *list, expr_t *expr)
 static type_t *append_array(type_t *chain, expr_t *expr)
 {
     type_t *array;
+    decl_type_t dt;
 
     if (!expr)
         return chain;
 
     /* An array is always a reference pointer unless explicitly marked otherwise
      * (regardless of what the default pointer attribute is). */
-    array = type_new_array(NULL, NULL, FALSE, expr->is_const ? expr->cval : 0,
+    array = decltype_new_array(NULL, init_decltype(&dt, NULL), FALSE, expr->is_const ? expr->cval : 0,
             expr->is_const ? NULL : expr, NULL, FC_RP);
 
     return append_chain_type(chain, array);
@@ -1527,7 +1643,6 @@ static type_t *get_array_or_ptr_ref(type_t *type)
     return NULL;
 }
 
-/* TODO: fuck fix me */
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
     type_t *chain_type;
@@ -1546,6 +1661,8 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         assert(0);
 
     chain_decltype->type = type;
+    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its declspec
+     * typequalifier on the pointer */
     if (is_attr(type->attrs, ATTR_CONST)) {
       TRACE();
       type->attrs = remove_attr(type->attrs, ATTR_CONST);
@@ -1617,6 +1734,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     if (declspec->typequalifier == TYPE_QUALIFIER_CONST) {
       TRACE();
       type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
+      assert(is_attr(type->attrs, ATTR_CONST));
     }
 
     v->declspec.type = append_chain_type(decl->type, type);
@@ -1719,14 +1837,13 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
             type_array_get_conformance(*ptype)->type != EXPR_VOID)
           error_loc("%s: cannot specify size_is for an already sized array\n", v->name);
         else
-          *ptype = type_new_array((*ptype)->name,
-                                  type_array_get_element(*ptype)->type, FALSE,
+          *ptype = decltype_new_array((*ptype)->name,
+                                  type_array_get_element(*ptype), FALSE,
                                   0, dim, NULL, 0);
       }
       else if (is_ptr(*ptype))
       {
-      	/* TODO: decltype here? */
-        *ptype = type_new_array((*ptype)->name, type_pointer_get_ref(*ptype)->type, TRUE,
+        *ptype = decltype_new_array((*ptype)->name, type_pointer_get_ref(*ptype), TRUE,
                                 0, dim, NULL, pointer_default);
       }
       else
@@ -1748,9 +1865,8 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     {
       if (is_array(*ptype))
       {
-        /* TODO: type new array maybe should take a decltype rather than a type? */
-        *ptype = type_new_array((*ptype)->name,
-                                type_array_get_element(*ptype)->type,
+        *ptype = decltype_new_array((*ptype)->name,
+                                type_array_get_element(*ptype),
                                 type_array_is_decl_as_ptr(*ptype),
                                 type_array_get_dim(*ptype),
                                 type_array_get_conformance(*ptype),
@@ -1931,8 +2047,16 @@ static declarator_t *make_declarator(var_t *var)
 
 static type_t *make_safearray(type_t *type)
 {
-  decl_type_t decltype;
-  return type_new_array(NULL, decltype_new_alias(init_decltype(&decltype, type), "SAFEARRAY", &global_namespace), TRUE, 0,
+  decl_type_t aliasee_dt;
+  decl_type_t element_dt;
+
+  init_decltype(&element_dt,
+                decltype_new_alias(
+                  init_decltype(&aliasee_dt, type),
+                  "SAFEARRAY",
+                  &global_namespace));
+
+  return decltype_new_array(NULL, &element_dt, TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 

@@ -29,14 +29,15 @@ enum name_type {
     NAME_C
 };
 
+/* TODO: decltype_new_X shoudl be renamed back to type_new_X */
 type_t *decltype_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace);
+type_t *decltype_new_array(const char* name, const decl_type_t *decltype, int declptr,
+                           unsigned int dim, expr_t *size_is, expr_t *length_is,
+                           unsigned char ptr_default_fc);
 
 type_t *type_new_function(var_list_t *args);
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs);
 type_t *type_new_module(char *name);
-type_t *type_new_array(const char *name, type_t *element, int declptr,
-                       unsigned int dim, expr_t *size_is, expr_t *length_is,
-                       unsigned char ptr_default_fc);
 type_t *type_new_basic(enum type_basic_type basic_type);
 type_t *type_new_int(enum type_basic_type basic_type, int sign);
 type_t *type_new_void(void);
@@ -45,6 +46,7 @@ type_t *type_new_enum(const char *name, struct namespace *namespace, int defined
 type_t *type_new_struct(char *name, struct namespace *namespace, int defined, var_list_t *fields);
 type_t *type_new_nonencapsulated_union(const char *name, int defined, var_list_t *fields);
 type_t *type_new_encapsulated_union(char *name, var_t *switch_field, var_t *union_field, var_list_t *cases);
+/* TODO: type_new_bitfield should take a decltype? */
 type_t *type_new_bitfield(type_t *field_type, const expr_t *bits);
 void type_interface_define(type_t *iface, type_t *inherit, statement_list_t *stmts);
 void type_dispinterface_define(type_t *iface, var_list_t *props, var_list_t *methods);
@@ -56,8 +58,6 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 
 /* FIXME: shouldn't need to export this */
 type_t *duptype(type_t *t, int dupname);
-
-/* TODO: basically make all of these functions work with decltypes instead */
 
 /* un-alias the type until finding the non-alias type */
 static inline type_t *type_get_real_type(const type_t *type)

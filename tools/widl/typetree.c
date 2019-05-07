@@ -228,20 +228,21 @@ type_t *type_new_coclass(char *name)
     return type;
 }
 
-
-type_t *type_new_array(const char *name, type_t *element, int declptr,
-                       unsigned int dim, expr_t *size_is, expr_t *length_is,
-                       unsigned char ptr_default_fc)
+type_t *decltype_new_array(const char *name, const decl_type_t *element, int declptr,
+                           unsigned int dim, expr_t *size_is, expr_t *length_is,
+                           unsigned char ptr_default_fc)
 {
     type_t *t = make_type(TYPE_ARRAY);
     if (name) t->name = xstrdup(name);
     t->details.array.declptr = declptr;
     t->details.array.length_is = length_is;
-    if (size_is)
+    if (size_is) {
         t->details.array.size_is = size_is;
-    else
-        t->details.array.dim = dim;\
-    init_decltype(&t->details.array.elem, element);
+    }
+    else {
+        t->details.array.dim = dim;
+    }
+    t->details.array.elem = *element;
     t->details.array.ptr_def_fc = ptr_default_fc;
     return t;
 }
