@@ -1109,7 +1109,7 @@ void write_args(FILE *h, const var_list_t *args, const char *name, int method, i
         }
         else fprintf(h, ",");
     }
-    write_type_decl(h, arg->declspec.type, arg->name);
+    write_decltype_decl(h, (decl_type_t*)&arg->declspec, arg->name);
     if (method == 2) {
         const expr_t *expr = get_attrp(arg->attrs, ATTR_DEFAULTVALUE);
         if (expr) {
