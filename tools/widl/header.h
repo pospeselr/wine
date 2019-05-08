@@ -31,6 +31,7 @@ extern unsigned int get_attrv(const attr_list_t *list, enum attr_type t);
 extern const char* get_name(const var_t *v);
 extern void write_decltype_left(FILE *h, decl_type_t *dt, enum name_type name_type, int declonly);
 extern void write_type_right(FILE *h, type_t *t, int is_field);
+/* TODO: kill thsi functin? */
 extern void write_type_decl(FILE *f, type_t *t, const char *name);
 extern void write_decltype_decl(FILE *f, decl_type_t *dt, const char *name);\
 /* TODO: purge remainders of this function call */

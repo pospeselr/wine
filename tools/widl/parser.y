@@ -1781,7 +1781,9 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
          * store an offset to the typeformat string in the type object, but
          * two typeformat strings may be written depending on whether the
          * pointer is a toplevel parameter or not */
+        TRACE();
         *pt = duptype(*pt, 1);
+        parser_warning("var name : %s\n", v->name);
       }
     }
     else if (ptr_attr)
@@ -1921,16 +1923,8 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
         error_loc("calling convention applied to non-function-pointer type\n");
   }
 
-  /* TODO: seems sketchy */
   if (decl->bits)
     v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
-
-  /* TODO: kill these parser warnings */
-  parser_warning("declare_var\n");
-  parser_warning("var name: %s\n", v->name);
-  parser_warning("type name: %s\n", v->declspec.type->name);
-  parser_warning(" const : %d\n", v->declspec.typequalifier == TYPE_QUALIFIER_CONST);
-  parser_warning(" is_ptr: %d\n", is_ptr(v->declspec.type));
 
   return v;
 }

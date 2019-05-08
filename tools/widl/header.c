@@ -432,7 +432,6 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
       case TYPE_BITFIELD:
         {
           decl_type_t dt;
-          /* TODO: bitfield should have decl_type_t most likely in case the bit is const? */
           write_decltype_left(h, init_decltype(&dt, type_bitfield_get_field(t)), name_type, declonly);
         }
         break;

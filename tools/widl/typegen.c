@@ -3973,7 +3973,8 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
                           enum remoting_phase phase, enum pass pass, const var_t *var,
                           const char *varname)
 {
-    type_t *type = var->declspec.type;
+    decl_type_t *decltype = (decl_type_t*)&var->declspec;
+    type_t *type = decltype->type;
     unsigned int alignment = 0;
 
     /* no work to do for other phases, buffer sizing is done elsewhere */
@@ -4004,8 +4005,9 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
     }
     else
     {
-        const type_t *ref = is_ptr(type) ? type_pointer_get_ref(type)->type : type;
-        switch (get_basic_fc(ref))
+        const decl_type_t *ref = is_ptr(type) ? type_pointer_get_ref(type) : decltype;
+        const type_t *reftype = ref->type;
+        switch (get_basic_fc(reftype))
         {
         case FC_BYTE:
         case FC_CHAR:
@@ -4042,7 +4044,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
 
         default:
             error("print_phase_basetype: Unsupported type: %s (0x%02x, ptr_level: 0)\n",
-                  var->name, get_basic_fc(ref));
+                  var->name, get_basic_fc(reftype));
         }
 
         if (phase == PHASE_MARSHAL && alignment > 1)
@@ -4053,7 +4055,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
         if (phase == PHASE_MARSHAL)
         {
             print_file(file, indent, "*(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
+            write_decltype_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : decltype, NULL);
             if (is_ptr(type))
                 fprintf(file, " *)__frame->_StubMsg.Buffer = *");
             else
@@ -4064,7 +4066,7 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
         else if (phase == PHASE_UNMARSHAL)
         {
             print_file(file, indent, "if (__frame->_StubMsg.Buffer + sizeof(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
+            write_decltype_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : decltype, NULL);
             fprintf(file, ") > __frame->_StubMsg.BufferEnd)\n");
             print_file(file, indent, "{\n");
             print_file(file, indent + 1, "RpcRaiseException(RPC_X_BAD_STUB_DATA);\n");
@@ -4076,12 +4078,12 @@ void print_phase_basetype(FILE *file, int indent, const char *local_var_prefix,
                 fprintf(file, " = (");
             else
                 fprintf(file, " = *(");
-            write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
+            write_decltype_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : decltype, NULL);
             fprintf(file, " *)__frame->_StubMsg.Buffer;\n");
         }
 
         print_file(file, indent, "__frame->_StubMsg.Buffer += sizeof(");
-        write_type_decl(file, is_ptr(type) ? type_pointer_get_ref(type)->type : type, NULL);
+        write_decltype_decl(file, is_ptr(type) ? type_pointer_get_ref(type) : decltype, NULL);
         fprintf(file, ");\n");
     }
 }
@@ -4386,9 +4388,9 @@ static void write_remoting_arg(FILE *file, int indent, const var_t *func, const 
             range_max = LIST_ENTRY(list_next(range_list, list_head(range_list)), const expr_t, entry);
 
             print_file(file, indent, "if ((%s%s < (", local_var_prefix, var->name);
-            write_type_decl(file, var->declspec.type, NULL);
+            write_decltype_decl(file, (decl_type_t*)&var->declspec, NULL);
             fprintf(file, ")0x%x) || (%s%s > (", range_min->cval, local_var_prefix, var->name);
-            write_type_decl(file, var->declspec.type, NULL);
+            write_decltype_decl(file, (decl_type_t*)&var->declspec, NULL);
             fprintf(file, ")0x%x))\n", range_max->cval);
             print_file(file, indent, "{\n");
             print_file(file, indent+1, "RpcRaiseException(RPC_S_INVALID_BOUND);\n");
@@ -4613,7 +4615,7 @@ void declare_stub_args( FILE *file, int indent, const var_t *func )
         else
         {
             print_file(file, indent, "%s", "");
-            write_type_decl(file, var->declspec.type, var->name);
+            write_decltype_decl(file, (decl_type_t*)&var->declspec, var->name);
             fprintf(file, ";\n");
         }
     }
@@ -4634,16 +4636,16 @@ void declare_stub_args( FILE *file, int indent, const var_t *func )
         {
             if (!in_attr && !is_conformant_array(var->declspec.type))
             {
-                type_t *type_to_print;
+                decl_type_t *decltype_to_print;
                 char name[16];
                 print_file(file, indent, "%s", "");
                 if (type_get_type(var->declspec.type) == TYPE_ARRAY &&
                     !type_array_is_decl_as_ptr(var->declspec.type))
-                    type_to_print = var->declspec.type;
+                    decltype_to_print = (decl_type_t*)&var->declspec;
                 else
-                    type_to_print = type_pointer_get_ref(var->declspec.type)->type;
+                    decltype_to_print = type_pointer_get_ref(var->declspec.type);
                 sprintf(name, "_W%u", i++);
-                write_type_decl(file, type_to_print, name);
+                write_decltype_decl(file, decltype_to_print, name);
                 fprintf(file, ";\n");
             }
 
@@ -4818,7 +4820,7 @@ void write_func_param_struct( FILE *file, const type_t *iface, const type_t *fun
     if (add_retval && !is_void( retval->declspec.type ))
     {
         print_file(file, 2, "%s", "");
-        write_type_decl( file, retval->declspec.type, retval->name );
+        write_decltype_decl( file, (decl_type_t*)&retval->declspec, retval->name );
         if (is_array( retval->declspec.type ) || is_ptr( retval->declspec.type ) ||
             type_memsize( retval->declspec.type ) == pointer_size)
             fprintf( file, ";\n" );
