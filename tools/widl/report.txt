@@ -1,11 +1,11 @@
-0b2c:dispatch: 58 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0b14:dispatch: 58 tests executed (0 marked as todo, 0 failures), 0 skipped.
 olefont.c:1067: Test failed: got obj type 6
 olefont.c:1134: Test failed: got obj type 6
 olefont.c:1170: Test failed: got obj type 6
-101c:olefont: 2624 tests executed (0 marked as todo, 3 failures), 0 skipped.
-0760:olepicture: 1622 tests executed (0 marked as todo, 0 failures), 0 skipped.
+1030:olefont: 2624 tests executed (0 marked as todo, 3 failures), 0 skipped.
+0f80:olepicture: 1622 tests executed (0 marked as todo, 0 failures), 0 skipped.
 safearray.c:318: VT_INT_PTR is supported
-1154:safearray: 11549 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0e04:safearray: 11549 tests executed (0 marked as todo, 0 failures), 0 skipped.
 tmarshal.c:1827: KindaEnumWidget destroyed!
 tmarshal.c:795: put_Name(L"")
 tmarshal.c:795: put_Name(L"Superman")
@@ -18,24 +18,24 @@ tmarshal.c:817: DoSomething()
 tmarshal.c:832: get_State() = STATE_WIDGETIFIED
 tmarshal.c:832: get_State() = STATE_WIDGETIFIED
 tmarshal.c:841: put_State(2)
-tmarshal.c:850: Map(L"TestTest", 0000000002BCE668)
+tmarshal.c:850: Map(L"TestTest", 0000000002C6E668)
 tmarshal.c:859: SetOleColor(0x80000005)
 tmarshal.c:867: GetOleColor() = 0x8000000f
 tmarshal.c:876: Clone()
 tmarshal.c:962: CloneInterface()
 tmarshal.c:884: CloneDispatch()
-tmarshal.c:901: Value(0000000000AC6098, 0000000002BCE1B8)
+tmarshal.c:901: Value(0000000000A15DF8, 0000000002C6E1B8)
 tmarshal.c:892: CloneCoclass()
-tmarshal.c:901: Value(0000000000ADAC30, 0000000002BCE668)
-tmarshal.c:926: VarArg(0000000000AD2B00)
-tmarshal.c:1050: VarArg_Run(0000000000ACC3F8,0000000000AD2600,0000000002BCE668)
-tmarshal.c:1085: VarArg_Ref_Run(0000000000ACC128,0000000000AD8F38,0000000002BCE668)
+tmarshal.c:901: Value(0000000000A2B270, 0000000002C6E668)
+tmarshal.c:926: VarArg(0000000000A22940)
+tmarshal.c:1050: VarArg_Run(0000000000A1BA28,0000000000A22F80,0000000002C6E668)
+tmarshal.c:1085: VarArg_Ref_Run(0000000000A1B998,0000000000A2A418,0000000002C6E668)
 tmarshal.c:954: Error()
 tmarshal.c:832: get_State() = STATE_WIDGETIFIED
 tmarshal.c:970: put_prop_with_lcid(00000409, cafe)
-tmarshal.c:979: get_prop_with_lcid(00000409, 0000000002BCE668)
-tmarshal.c:988: get_prop_int(0000000002BCE668)
-tmarshal.c:996: get_prop_uint(0000000002BCE668)
+tmarshal.c:979: get_prop_with_lcid(00000409, 0000000002C6E668)
+tmarshal.c:988: get_prop_int(0000000002C6E668)
+tmarshal.c:996: get_prop_uint(0000000002C6E668)
 tmarshal.c:1011: put_prop_opt_arg(00000000, 0000cafe)
 tmarshal.c:1020: put_prop_req_arg(00005678, 00001234)
 tmarshal.c:1035: neg_restrict
@@ -66,7 +66,7 @@ tmarshal.c:203: add connection
 tmarshal.c:213: release connection
 tmarshal.c:213: release connection
 tmarshal.c:340: QI external connection
-1200:tmarshal: 787 tests executed (0 marked as todo, 0 failures), 0 skipped.
+1088:tmarshal: 787 tests executed (0 marked as todo, 0 failures), 0 skipped.
 typelib.c:304: Loading type library
 typelib.c:1867: testing SYS_WIN64
 typelib.c:1875: CreateTypeLib tests
@@ -130,19 +130,19 @@ typelib.c:4816: Function test6
 typelib.c:4989: Starting system typelib registration tests
 typelib.c:4989: Starting user typelib registration tests
 typelib.c:6353: Starting typelib dependency tests
-07d0:typelib: 4898 tests executed (0 marked as todo, 0 failures), 0 skipped.
-1184:usrmarshal: 601 tests executed (0 marked as todo, 0 failures), 0 skipped.
-0f48:varformat: 868 tests executed (0 marked as todo, 0 failures), 0 skipped.
-0514:vartest: 1032126 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0afc:typelib: 4898 tests executed (0 marked as todo, 0 failures), 0 skipped.
+1394:usrmarshal: 601 tests executed (0 marked as todo, 0 failures), 0 skipped.
+095c:varformat: 868 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0310:vartest: 1032126 tests executed (0 marked as todo, 0 failures), 0 skipped.
 vartype.c:6118: LCIDs: System=0x00000409, User=0x00000409
-0e74:vartype: 2517506 tests executed (0 marked as todo, 0 failures), 0 skipped.
-0f5c:cstub: 201 tests executed (0 marked as todo, 0 failures), 0 skipped.
-1308:generated: 0 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0be4:vartype: 2517506 tests executed (0 marked as todo, 0 failures), 0 skipped.
+11f8:cstub: 201 tests executed (0 marked as todo, 0 failures), 0 skipped.
+1058:generated: 0 tests executed (0 marked as todo, 0 failures), 0 skipped.
 ndr_marshall.c:137: Pointer marshalling using pointer ids
 ndr_marshall.c:1753: NdrClientInitializeNew: LowStackMark is 000000000077CA58
 ndr_marshall.c:1753: NdrServerInitializeNew: LowStackMark is 000000000077C918
 ndr_marshall.c:1889: v2 mem list format
-117c:ndr_marshall: 31855 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0cbc:ndr_marshall: 31855 tests executed (0 marked as todo, 0 failures), 0 skipped.
 rpc.c:356: Tests skipped: TowerConstruct failed, we are most likely on Windows Vista
 rpc.c:688: I_RpcExceptionFilter(0x80000001) returned 0
 rpc.c:688: I_RpcExceptionFilter(0xc0000006) returned 0
@@ -152,26 +152,26 @@ rpc.c:688: RpcExceptionFilter(0xc0000006) returned 0
 rpc.c:688: RpcExceptionFilter(0xc0000235) returned 0
 rpc.c:884: DESKTOP-0FMT5SQ\user
 rpc.c:982: string binding: ncacn_ip_tcp:DESKTOP-0FMT5SQ[4114]
-rpc.c:982: string binding: ncalrpc:DESKTOP-0FMT5SQ[LRPC-d1d09d542c392aa8b9]
-rpc.c:982: string binding: ncacn_np:\\\\DESKTOP-0FMT5SQ[\\pipe\\bda7d77edc664fc3]
-047c:rpc: 16481 tests executed (0 marked as todo, 0 failures), 1 skipped.
-0edc:rpc_async: 19 tests executed (0 marked as todo, 0 failures), 0 skipped.
+rpc.c:982: string binding: ncalrpc:DESKTOP-0FMT5SQ[LRPC-4484c22d2948838189]
+rpc.c:982: string binding: ncacn_np:\\\\DESKTOP-0FMT5SQ[\\pipe\\cdcf28e586326ba7]
+02a8:rpc: 16481 tests executed (0 marked as todo, 0 failures), 1 skipped.
+1348:rpc_async: 19 tests executed (0 marked as todo, 0 failures), 0 skipped.
 server.c:2034: Using RpcServerRegisterIfEx
-0b40:server: 151 tests executed (0 marked as todo, 0 failures), 0 skipped.
-0ae0:server: 151 tests executed (0 marked as todo, 0 failures), 0 skipped.
-1300:server: 11 tests executed (0 marked as todo, 0 failures), 0 skipped.
-111c:server: 144 tests executed (0 marked as todo, 0 failures), 0 skipped.
-100c:server: 153 tests executed (0 marked as todo, 0 failures), 0 skipped.
-1248:server: 152 tests executed (0 marked as todo, 0 failures), 0 skipped.
+07d8:server: 151 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0e74:server: 151 tests executed (0 marked as todo, 0 failures), 0 skipped.
+12d8:server: 11 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0700:server: 144 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0208:server: 153 tests executed (0 marked as todo, 0 failures), 0 skipped.
+12fc:server: 152 tests executed (0 marked as todo, 0 failures), 0 skipped.
 server.c:2260: running server process...
-0fc8:server: 80 tests executed (0 marked as todo, 0 failures), 0 skipped.
+1238:server: 80 tests executed (0 marked as todo, 0 failures), 0 skipped.
 server.c:2260: running server process...
-13c4:server: 18 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0cf8:server: 18 tests executed (0 marked as todo, 0 failures), 0 skipped.
 server.c:2135: waiting
 server.c:2124: stopped
 server.c:2138: done
 server.c:2135: waiting
 server.c:2124: stopped
 server.c:2138: done
-0c2c:server: 54 tests executed (0 marked as todo, 0 failures), 0 skipped.
-0e04:server: 1785 tests executed (0 marked as todo, 0 failures), 0 skipped.
+0ff0:server: 54 tests executed (0 marked as todo, 0 failures), 0 skipped.
+110c:server: 1785 tests executed (0 marked as todo, 0 failures), 0 skipped.
