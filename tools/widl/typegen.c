@@ -2274,12 +2274,13 @@ static int user_type_has_variable_size(const type_t *t)
     return FALSE;
 }
 
-static unsigned int write_user_tfs(FILE *file, type_t *type, unsigned int *tfsoff)
+static unsigned int write_user_tfs(FILE *file, decl_type_t *decltype, unsigned int *tfsoff)
 {
     unsigned int start, absoff, flags;
     const char *name = NULL;
-    /* TODO: decltype? */
-    type_t *utype = get_user_type(type, &name);
+    type_t *type = decltype->type;
+    decl_type_t *udecltype = get_user_decltype(type, &name);
+    type_t *utype = udecltype ? udecltype->type : NULL;
     unsigned int usize = type_memsize(utype);
     unsigned int ualign = type_buffer_alignment(utype);
     unsigned int size = type_memsize(type);
@@ -2315,8 +2316,7 @@ static unsigned int write_user_tfs(FILE *file, type_t *type, unsigned int *tfsof
     {
         if (!processed(utype))
         {
-            decl_type_t dt;
-            write_embedded_types(file, NULL, init_decltype(&dt, utype), utype->name, TRUE, tfsoff);
+            write_embedded_types(file, NULL, udecltype, utype->name, TRUE, tfsoff);
         }
         absoff = utype->typestring_offset;
     }
@@ -2330,10 +2330,7 @@ static unsigned int write_user_tfs(FILE *file, type_t *type, unsigned int *tfsof
 
     start = *tfsoff;
     update_tfsoff(type, start, file);
-    {
-        decl_type_t dt;
-        print_start_tfs_comment(file, init_decltype(&dt, type), start);
-    }
+    print_start_tfs_comment(file, decltype, start);
     print_file(file, 2, "0x%x,\t/* FC_USER_MARSHAL */\n", FC_USER_MARSHAL);
     print_file(file, 2, "0x%x,\t/* Alignment= %d, Flags= %02x */\n",
                flags | (ualign - 1), ualign - 1, flags);
@@ -3621,7 +3618,6 @@ static unsigned int write_type_tfs(FILE *file, int indent,
                                    unsigned int *typeformat_offset)
 {
     unsigned int offset;
-    /* TODO: kill this type_t */
     type_t *type = decltype->type;
 
     switch (typegen_detect_type(type, attrs, TDT_ALL_TYPES))
@@ -3630,8 +3626,7 @@ static unsigned int write_type_tfs(FILE *file, int indent,
     case TGT_CTXT_HANDLE_POINTER:
         return write_contexthandle_tfs(file, attrs, decltype, context, typeformat_offset);
     case TGT_USER_TYPE:
-        /* TODO: decltype */
-        return write_user_tfs(file, type, typeformat_offset);
+        return write_user_tfs(file, decltype, typeformat_offset);
     case TGT_STRING:
         return write_string_tfs(file, attrs, decltype, context, name, typeformat_offset);
     case TGT_ARRAY:
