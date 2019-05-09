@@ -319,6 +319,7 @@ struct _attr_t {
   union {
     unsigned int ival;
     void *pval;
+    struct _decl_type_t dtval;
   } u;
   /* parser-internal */
   struct list entry;

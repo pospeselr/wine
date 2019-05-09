@@ -65,6 +65,7 @@ static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
+static attr_t *make_attrdt(enum attr_type type, type_t *val);
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr);
 static type_t *append_array(type_t *chain, expr_t *expr);
 static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const declarator_t *decl, int top);
@@ -591,7 +592,7 @@ attribute:					{ $$ = NULL; }
 	| tVARARG				{ $$ = make_attr(ATTR_VARARG); }
 	| tVERSION '(' version ')'		{ $$ = make_attrv(ATTR_VERSION, $3); }
 	| tVIPROGID '(' aSTRING ')'		{ $$ = make_attrp(ATTR_VIPROGID, $3); }
-	| tWIREMARSHAL '(' type ')'		{ $$ = make_attrp(ATTR_WIREMARSHAL, $3); }
+	| tWIREMARSHAL '(' type ')'		{ $$ = make_attrdt(ATTR_WIREMARSHAL, $3); }
 	| pointer_type				{ $$ = make_attrv(ATTR_POINTERTYPE, $1); }
 	;
 
@@ -1533,6 +1534,19 @@ static attr_t *make_attrp(enum attr_type type, void *val)
   a->type = type;
   a->u.pval = val;
   return a;
+}
+
+static attr_t *make_attrdt(enum attr_type type, type_t *val)
+{
+  return make_attrp(type, val);
+
+  // attr_t *a = NULL;
+  // assert(type == ATTR_WIREMARSHAL);
+  // a = xmalloc(sizeof(attr_t));
+
+  // a->type = type;
+  // init_decltype(&a->u.dtval, val);
+  // return a;
 }
 
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr)

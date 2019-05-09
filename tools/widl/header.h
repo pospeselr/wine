@@ -28,6 +28,7 @@ extern int is_aliaschain_attr(const type_t *var, enum attr_type t);
 extern int is_attr(const attr_list_t *list, enum attr_type t);
 extern void *get_attrp(const attr_list_t *list, enum attr_type t);
 extern unsigned int get_attrv(const attr_list_t *list, enum attr_type t);
+extern decl_type_t *get_attrdt(const attr_list_t *list, enum attr_type t);
 extern const char* get_name(const var_t *v);
 extern void write_decltype_left(FILE *h, decl_type_t *dt, enum name_type name_type, int declonly);
 extern void write_type_right(FILE *h, type_t *t, int is_field);
