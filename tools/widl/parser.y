@@ -1538,15 +1538,13 @@ static attr_t *make_attrp(enum attr_type type, void *val)
 
 static attr_t *make_attrdt(enum attr_type type, type_t *val)
 {
-  return make_attrp(type, val);
+  attr_t *a = NULL;
+  assert(type == ATTR_WIREMARSHAL);
+  a = xmalloc(sizeof(attr_t));
 
-  // attr_t *a = NULL;
-  // assert(type == ATTR_WIREMARSHAL);
-  // a = xmalloc(sizeof(attr_t));
-
-  // a->type = type;
-  // init_decltype(&a->u.dtval, val);
-  // return a;
+  a->type = type;
+  init_decltype(&a->u.dtval, val);
+  return a;
 }
 
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr)

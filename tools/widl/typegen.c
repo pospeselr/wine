@@ -2304,10 +2304,7 @@ static unsigned int write_user_tfs(FILE *file, decl_type_t *decltype, unsigned i
             fc = get_basic_fc(utype);
 
         absoff = *tfsoff;
-        {
-            decl_type_t dt;
-            print_start_tfs_comment(file, init_decltype(&dt, utype), absoff);
-        }
+        print_start_tfs_comment(file, udecltype, absoff);
         print_file(file, 2, "0x%x,\t/* %s */\n", fc, string_of_type(fc));
         print_file(file, 2, "0x5c,\t/* FC_PAD */\n");
         *tfsoff += 2;
