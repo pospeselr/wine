@@ -123,13 +123,10 @@ unsigned int get_attrv(const attr_list_t *list, enum attr_type t)
 
 decl_type_t *get_attrdt(const attr_list_t *list, enum attr_type t)
 {
-    return 0;
-#if 0    
     const attr_t *attr;
     if (list) LIST_FOR_EACH_ENTRY( attr, list, const attr_t, entry )
         if (attr->type == t) return (decl_type_t*)&attr->u.dtval;
     return 0;
-#endif    
 }
 
 static void write_guid(FILE *f, const char *guid_prefix, const char *name, const UUID *uuid)
