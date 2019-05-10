@@ -242,7 +242,9 @@ type_t *decltype_new_array(const char *name, const decl_type_t *element, int dec
     else {
         t->details.array.dim = dim;
     }
-    t->details.array.elem = *element;
+    if (element) {
+        t->details.array.elem = *element;
+    }
     t->details.array.ptr_def_fc = ptr_default_fc;
     return t;
 }

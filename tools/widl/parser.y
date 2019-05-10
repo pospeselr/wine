@@ -1562,14 +1562,13 @@ static expr_list_t *append_expr(expr_list_t *list, expr_t *expr)
 static type_t *append_array(type_t *chain, expr_t *expr)
 {
     type_t *array;
-    decl_type_t dt;
 
     if (!expr)
         return chain;
 
     /* An array is always a reference pointer unless explicitly marked otherwise
      * (regardless of what the default pointer attribute is). */
-    array = decltype_new_array(NULL, init_decltype(&dt, NULL), FALSE, expr->is_const ? expr->cval : 0,
+    array = decltype_new_array(NULL, NULL, FALSE, expr->is_const ? expr->cval : 0,
             expr->is_const ? NULL : expr, NULL, FC_RP);
 
     return append_chain_type(chain, array);

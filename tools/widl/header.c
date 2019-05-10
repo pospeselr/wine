@@ -124,6 +124,7 @@ unsigned int get_attrv(const attr_list_t *list, enum attr_type t)
 decl_type_t *get_attrdt(const attr_list_t *list, enum attr_type t)
 {
     const attr_t *attr;
+    assert(t == ATTR_WIREMARSHAL);
     if (list) LIST_FOR_EACH_ENTRY( attr, list, const attr_t, entry )
         if (attr->type == t) return (decl_type_t*)&attr->u.dtval;
     return 0;
