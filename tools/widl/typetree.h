@@ -34,6 +34,7 @@ type_t *decltype_new_alias(const decl_type_t *decltype, const char *name, struct
 type_t *decltype_new_array(const char* name, const decl_type_t *decltype, int declptr,
                            unsigned int dim, expr_t *size_is, expr_t *length_is,
                            unsigned char ptr_default_fc);
+type_t *decltype_new_bitfield(const decl_type_t *decltype, const expr_t *bits);
 
 type_t *type_new_function(var_list_t *args);
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs);
@@ -46,7 +47,6 @@ type_t *type_new_enum(const char *name, struct namespace *namespace, int defined
 type_t *type_new_struct(char *name, struct namespace *namespace, int defined, var_list_t *fields);
 type_t *type_new_nonencapsulated_union(const char *name, int defined, var_list_t *fields);
 type_t *type_new_encapsulated_union(char *name, var_t *switch_field, var_t *union_field, var_list_t *cases);
-type_t *type_new_bitfield(type_t *field_type, const expr_t *bits);
 void type_interface_define(type_t *iface, type_t *inherit, statement_list_t *stmts);
 void type_dispinterface_define(type_t *iface, var_list_t *props, var_list_t *methods);
 void type_dispinterface_define_from_iface(type_t *dispiface, type_t *iface);
@@ -59,6 +59,7 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 type_t *duptype(type_t *t, int dupname);
 
 /* un-alias the type until finding the non-alias type */
+/* TODO: probably ought to be a decl_type_t so we can get the type qualifier */
 static inline type_t *type_get_real_type(const type_t *type)
 {
     if (type->is_alias)
@@ -314,12 +315,11 @@ static inline unsigned char type_pointer_get_default_fc(const type_t *type)
     return type->details.pointer.def_fc;
 }
 
-/* TODO: field should be decl_type_t I think */
-static inline type_t *type_bitfield_get_field(const type_t *type)
+static inline decl_type_t *type_bitfield_get_field(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_BITFIELD);
-    return type->details.bitfield.field;
+    return (decl_type_t*)&type->details.bitfield.field;
 }
 
 static inline const expr_t *type_bitfield_get_bits(const type_t *type)

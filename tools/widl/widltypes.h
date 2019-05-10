@@ -404,7 +404,7 @@ struct pointer_details
 
 struct bitfield_details
 {
-  struct _type_t *field;
+  struct _decl_type_t field;
   const expr_t *bits;
 };
 

@@ -404,11 +404,11 @@ static int is_valid_bitfield_type(const type_t *type)
     }
 }
 
-type_t *type_new_bitfield(type_t *field, const expr_t *bits)
+type_t *decltype_new_bitfield(const decl_type_t *field, const expr_t *bits)
 {
     type_t *t;
 
-    if (!is_valid_bitfield_type(field))
+    if (!is_valid_bitfield_type(field->type))
         error_loc("bit-field has invalid type\n");
 
     if (bits->cval < 0)
@@ -417,9 +417,9 @@ type_t *type_new_bitfield(type_t *field, const expr_t *bits)
     /* FIXME: validate bits->cval <= memsize(field) * 8 */
 
     t = make_type(TYPE_BITFIELD);
-    t->details.bitfield.field = field;
+    t->details.bitfield.field = *field;
     t->details.bitfield.bits = bits;
-    return t;
+    return t;    
 }
 
 static int compute_method_indexes(type_t *iface)

@@ -1737,7 +1737,12 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     TRACE();
     /* simplest case, no pointers to deal with here */
     v->declspec.typequalifier = declspec->typequalifier;
-  } else {
+  } else if (decl->bits) {
+  	/* dealing with a bitfield, just pass it on */
+	  v->declspec.type = decltype_new_bitfield(declspec, decl->bits);
+  }
+  else {
+  	parser_warning("bits : %d\n", decl->bits != NULL);
     /* here we're dealing with a pointerish type chain, so we need to pull
      * the typequalifier off of the declspec and stick them in the type's attr list
      */
@@ -1933,9 +1938,6 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
-
-  if (decl->bits)
-    v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
 
   return v;
 }

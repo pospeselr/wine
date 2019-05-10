@@ -439,10 +439,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
         fprintf(h, "void");
         break;
       case TYPE_BITFIELD:
-        {
-          decl_type_t dt;
-          write_decltype_left(h, init_decltype(&dt, type_bitfield_get_field(t)), name_type, declonly);
-        }
+          write_decltype_left(h, type_bitfield_get_field(t), name_type, declonly);
         break;
       case TYPE_ALIAS:
       case TYPE_FUNCTION:
@@ -1450,6 +1447,7 @@ static void write_function_proto(FILE *header, const type_t *iface, const var_t 
   const char *callconv = get_attrp(fun->declspec.type->attrs, ATTR_CALLCONV);
 
   if (!callconv) callconv = "__cdecl";
+  /* TODO: look for function_specicifier on the fun->declspec */
   write_decltype_decl_left(header, type_function_get_retdeclspec(fun->declspec.type));
   fprintf(header, " %s ", callconv);
   fprintf(header, "%s%s(\n", prefix, get_name(fun));
