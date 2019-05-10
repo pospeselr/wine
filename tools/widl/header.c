@@ -1374,7 +1374,6 @@ static void write_locals(FILE *fp, const type_t *iface, int body)
         write_args(fp, type_get_function_args(m->declspec.type), iface->name, 1, TRUE);
         fprintf(fp, ")");
         if (body) {
-          /* TODO: we need the declspec here */
           type_t *rt = type_function_get_rettype(m->declspec.type);
           fprintf(fp, "\n{\n");
           fprintf(fp, "    %s\n", comment);
