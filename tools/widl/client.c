@@ -58,6 +58,9 @@ static void write_client_func_decl( const type_t *iface, const var_t *func )
 
     if (!callconv) callconv = "__cdecl";
     write_decltype_decl_left(client, retdecltype);
+    if (func->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+        fprintf(client, " inline");
+    }
     fprintf(client, " %s ", callconv);
     fprintf(client, "%s%s(\n", prefix_client, get_name(func));
     indent++;

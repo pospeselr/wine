@@ -506,20 +506,23 @@ static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, c
 {
   type_t *t = dt->type;
   type_t *pt = NULL;
+  decl_type_t *dpt = NULL;
   int ptr_level = 0;
 
   if (!h) return;
 
   if (t) {
-    for (pt = t; is_ptr(pt); pt = type_pointer_get_ref(pt)->type, ptr_level++)
+    for (dpt = dt; is_ptr(dpt->type); dpt = type_pointer_get_ref(dpt->type), ptr_level++)
       ;
+    pt = dpt->type;
 
     if (type_get_type_detect_alias(pt) == TYPE_FUNCTION) {
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      /* TODO: get inline attr from decltype */
-      if (is_attr(pt->attrs, ATTR_INLINE)) fprintf(h, "inline ");
+      if (!is_ptr(dt->type) && dt->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+        fprintf(h, "inline ");
+      }
       write_decltype_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly); 
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
@@ -1447,8 +1450,10 @@ static void write_function_proto(FILE *header, const type_t *iface, const var_t 
   const char *callconv = get_attrp(fun->declspec.type->attrs, ATTR_CALLCONV);
 
   if (!callconv) callconv = "__cdecl";
-  /* TODO: look for function_specicifier on the fun->declspec */
   write_decltype_decl_left(header, type_function_get_retdeclspec(fun->declspec.type));
+  if (fun->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+    fprintf(header, " inline");
+  }
   fprintf(header, " %s ", callconv);
   fprintf(header, "%s%s(\n", prefix, get_name(fun));
   if (type_get_function_args(fun->declspec.type))

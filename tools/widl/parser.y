@@ -1710,22 +1710,18 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
   type_t *func_type = decl ? decl->func_type : NULL;
   type_t *type = declspec->type;
 
-  /* TODO: function specifier as well? */
-  if (is_attr(type->attrs, ATTR_INLINE))
-  {
-    if (!func_type)
+
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+    if (!func_type) 
+    {
       error_loc("inline attribute applied to non-function type\n");
+    }
     else
     {
-      type_t *t;
-      /* TODO: inline here would be on the declspec */
-      /* move inline attribute from return type node to function node */
-      for (t = func_type; is_ptr(t); t = type_pointer_get_ref(t)->type)
-        ;
-      t->attrs = move_attr(t->attrs, type->attrs, ATTR_INLINE);
+      v->declspec.funcspecifier = declspec->funcspecifier;
     }
   }
-  
+
   /* if the var type is a pointerish, we need to move the type qualifier to the pointee's decltype 
    * unless the pointee already has const type qualifier*/
 
