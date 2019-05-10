@@ -450,6 +450,12 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
   }  
 }
 
+void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
+{
+  decl_type_t dt;
+  write_decltype_left(h, init_decltype(&dt, t), name_type, declonly);
+}
+
 void write_type_right(FILE *h, type_t *t, int is_field)
 {
   if (!h) return;
@@ -569,20 +575,14 @@ static void write_type_definition(FILE *f, type_t *t)
         write_namespace_start(f, t->namespace);
     }
     indent(f, 0);
-    {
-      decl_type_t dt;
-      write_decltype_left(f, init_decltype(&dt, t), NAME_DEFAULT, FALSE);
-    }
+    write_type_left(f, t, NAME_DEFAULT, FALSE);
     fprintf(f, ";\n");
     if(in_namespace) {
         t->written = save_written;
         write_namespace_end(f, t->namespace);
         fprintf(f, "extern \"C\" {\n");
         fprintf(f, "#else\n");
-        {
-          decl_type_t dt;
-          write_decltype_left(f, init_decltype(&dt, t), NAME_C, FALSE);
-        }
+        write_type_left(f, t, NAME_C, FALSE);
         fprintf(f, ";\n");
         fprintf(f, "#endif\n\n");
     }
@@ -598,13 +598,6 @@ void write_type_decl(FILE *f, type_t *t, const char *name)
 void write_decltype_decl(FILE *f, decl_type_t *dt, const char *name)
 {
   write_type_v(f, dt, FALSE, TRUE, name);
-}
-
-/* TODO: take decl_type */
-void write_type_decl_left(FILE *f, type_t *t)
-{
-  decl_type_t dt;
-  write_decltype_decl_left(f, init_decltype(&dt, t));
 }
 
 void write_decltype_decl_left(FILE *f, decl_type_t *dt)
