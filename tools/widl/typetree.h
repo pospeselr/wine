@@ -110,7 +110,7 @@ static inline var_t *type_function_get_retval(const type_t *type)
 
 static inline decl_type_t* type_function_get_retdeclspec(const type_t *type)
 {
-    return &(type_function_get_retval(type)->declspec);
+    return &(type_function_get_retval(type)->decltype);
 }
 
 /* TODO: declspecs -> decltype */
@@ -151,7 +151,7 @@ static inline var_list_t *type_union_get_cases(const type_t *type)
     if (type_type == TYPE_ENCAPSULATED_UNION)
     {
         const var_t *uv = LIST_ENTRY(list_tail(type->details.structure->fields), const var_t, entry);
-        return uv->declspec.type->details.structure->fields;
+        return uv->decltype.type->details.structure->fields;
     }
     else
         return type->details.structure->fields;
