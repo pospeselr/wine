@@ -51,7 +51,6 @@ static const var_t *current_func;
 static const type_t *current_iface;
 
 static struct list expr_eval_routines = LIST_INIT(expr_eval_routines);
-/* TODO: maybe switch these over to decltypes, maybe not necessary since we only care about the const expresion? */
 struct expr_eval_routine
 {
     struct list   entry;
@@ -2221,7 +2220,6 @@ static void print_start_tfs_comment(FILE *file, decl_type_t *dt, unsigned int tf
     print_file(file, 0, ") */\n");
 }
 
-/* TODO: take in a decltype */
 static unsigned int write_pointer_tfs(FILE *file, const attr_list_t *attrs,
                                       decl_type_t *decltype, unsigned int ref_offset,
                                       enum type_context context,
@@ -2381,7 +2379,6 @@ static void write_member_type(FILE *file, const type_t *cont,
         error("Unsupported member type %d\n", type_get_type(type));
 }
 
-/* TODO: probably needs a decltype to pass down to write_member_type */
 static void write_array_element_type(FILE *file, const attr_list_t *attrs, const type_t *type,
                                      int cont_is_complex, unsigned int *tfsoff)
 {
@@ -2798,7 +2795,6 @@ static int write_varying_array_pointer_descriptions(
     return pointer_count;
 }
 
-/* TODO: various functions here need to take decltype */
 static void write_pointer_description(FILE *file, const attr_list_t *attrs, decl_type_t *decltype,
                                       unsigned int *typestring_offset)
 {
@@ -2959,7 +2955,6 @@ static unsigned int write_string_tfs(FILE *file, const attr_list_t *attrs,
     }
 }
 
-/* TODO: take decltype */
 static unsigned int write_array_tfs(FILE *file, const attr_list_t *attrs, decl_type_t *decltype,
                                     const char *name, unsigned int *typestring_offset)
 {
@@ -3153,7 +3148,6 @@ static void write_struct_members(FILE *file, const type_t *type,
 static unsigned int write_struct_tfs(FILE *file, decl_type_t *decltype,
                                      const char *name, unsigned int *tfsoff)
 {
-    /* TODO: revisit thsi type too */
     type_t *type = decltype->type;
     const type_t *save_current_structure = current_structure;
     unsigned int total_size;
@@ -3319,7 +3313,6 @@ static void write_branch_type(FILE *file, const type_t *t, unsigned int *tfsoff)
 static unsigned int write_union_tfs(FILE *file, const attr_list_t *attrs,
                                     decl_type_t *decltype, unsigned int *tfsoff)
 {
-    /* TODO: type here */
     type_t* type = decltype->type;
     unsigned int start_offset;
     unsigned int size;
@@ -3489,7 +3482,6 @@ static unsigned int write_ip_tfs(FILE *file, const attr_list_t *attrs, decl_type
                                  unsigned int *typeformat_offset)
 {
     unsigned int i;
-    /* TODO: see how type is used here and if it's necesary */
     type_t *type = decltype->type;
     unsigned int start_offset = *typeformat_offset;
     expr_t *iid = get_attrp(attrs, ATTR_IIDIS);
@@ -3530,7 +3522,6 @@ static unsigned int write_ip_tfs(FILE *file, const attr_list_t *attrs, decl_type
     return start_offset;
 }
 
-/* TODO: take decl_type_t */
 static unsigned int write_contexthandle_tfs(FILE *file,
                                             const attr_list_t *attrs,
                                             decl_type_t *decltype,
