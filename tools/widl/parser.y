@@ -1648,9 +1648,9 @@ static int is_allowed_range_type(const type_t *type)
 static type_t *get_array_or_ptr_ref(type_t *type)
 {
     if (is_ptr(type))
-        return type_pointer_get_ref(type)->type;
+        return type_pointer_get_ref_type(type);
     else if (is_array(type))
-        return type_array_get_element(type)->type;
+        return type_array_get_element_type(type);
     return NULL;
 }
 
@@ -1775,14 +1775,14 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     {
       ptr_attr = get_attrv(ptr->attrs, ATTR_POINTERTYPE);
       if (!ptr_attr && type_is_alias(ptr))
-        ptr = type_alias_get_aliasee(ptr)->type;
+        ptr = type_alias_get_aliasee_type(ptr);
       else
         break;
     }
     if (is_ptr(ptr))
     {
       if (ptr_attr && ptr_attr != FC_UP &&
-          type_get_type(type_pointer_get_ref(ptr)->type) == TYPE_INTERFACE)
+          type_get_type(type_pointer_get_ref_type(ptr)) == TYPE_INTERFACE)
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
@@ -1813,9 +1813,9 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     for (;;)
     {
         if (is_ptr(t))
-            t = type_pointer_get_ref(t)->type;
+            t = type_pointer_get_ref_type(t);
         else if (is_array(t))
-            t = type_array_get_element(t)->type;
+            t = type_array_get_element_type(t);
         else
             break;
     }
@@ -1912,7 +1912,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
 
     v->decltype.type = func_type;
     v->decltype.typequalifier = TYPE_QUALIFIER_NONE;
-    for (ft = v->decltype.type; is_ptr(ft); ft = type_pointer_get_ref(ft)->type)
+    for (ft = v->decltype.type; is_ptr(ft); ft = type_pointer_get_ref_type(ft))
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
@@ -1924,13 +1924,13 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
 
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
-    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref(t)->type)
+    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref_type(t))
       ft->attrs = move_attr(ft->attrs, t->attrs, ATTR_CALLCONV);
   }
   else
   {
     type_t *t;
-    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref(t)->type)
+    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref_type(t))
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
@@ -2172,7 +2172,7 @@ void add_incomplete(type_t *t)
 static void fix_type(type_t *t)
 {
   if (type_is_alias(t) && is_incomplete(t)) {
-    type_t *ot = type_alias_get_aliasee(t)->type;
+    type_t *ot = type_alias_get_aliasee_type(t);
     fix_type(ot);
     if (type_get_type_detect_alias(ot) == TYPE_STRUCT ||
         type_get_type_detect_alias(ot) == TYPE_UNION ||
@@ -2745,7 +2745,7 @@ static int is_ptr_guid_type(const type_t *type)
 
     /* second, make sure it is a pointer to something of size sizeof(GUID),
      * i.e. 16 bytes */
-    return (type_memsize(type_pointer_get_ref(type)->type) == 16);
+    return (type_memsize(type_pointer_get_ref_type(type)) == 16);
 }
 
 static void check_conformance_expr_list(const char *attr_name, const var_t *arg, const type_t *container_type, expr_list_t *expr_list)
@@ -2899,17 +2899,17 @@ static void check_field_common(const type_t *container_type,
         {
             const type_t *t = type;
             while (is_ptr(t))
-                t = type_pointer_get_ref(t)->type;
+                t = type_pointer_get_ref_type(t);
             if (is_aliaschain_attr(t, ATTR_RANGE))
                 warning_loc_info(&arg->loc_info, "%s: range not verified for a string of ranged types\n", arg->name);
             break;
         }
         case TGT_POINTER:
-            type = type_pointer_get_ref(type)->type;
+            type = type_pointer_get_ref_type(type);
             more_to_do = TRUE;
             break;
         case TGT_ARRAY:
-            type = type_array_get_element(type)->type;
+            type = type_array_get_element_type(type);
             more_to_do = TRUE;
             break;
         case TGT_USER_TYPE:

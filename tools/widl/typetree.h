@@ -261,12 +261,24 @@ static inline expr_t *type_array_get_variance(const type_t *type)
 
 /* TODO: add functions like type_array_get_element_type (and same for pointer and aliasee) so we can
  * remove all of the ->type we've had to add all over the place */
+/* TODO: 
+    type_pointer_get_ref_type
+    type_alias_get_aliasee_type
+    type_bitfield_whatever
+*/
 
 static inline decl_type_t *type_array_get_element(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_ARRAY);
     return (decl_type_t*)&type->details.array.elem;
+}
+
+static inline type_t *type_array_get_element_type(const type_t *type)
+{
+    decl_type_t *dt = type_array_get_element(type);
+    if (dt) return dt->type;
+    return NULL;
 }
 
 static inline int type_array_is_decl_as_ptr(const type_t *type)
@@ -294,6 +306,13 @@ static inline decl_type_t *type_alias_get_aliasee(const type_t *type)
     return (decl_type_t*)&type->details.alias.aliasee;
 }
 
+static inline type_t *type_alias_get_aliasee_type(const type_t *type)
+{
+    decl_type_t *dt = type_alias_get_aliasee(type);
+    if (dt) return dt->type;
+    return NULL;
+}
+
 static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)
 {
     type = type_get_real_type(type);
@@ -306,6 +325,13 @@ static inline decl_type_t *type_pointer_get_ref(const type_t *type)
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_POINTER);
     return (decl_type_t*)&type->details.pointer.ref;
+}
+
+static inline type_t *type_pointer_get_ref_type(const type_t *type)
+{
+    decl_type_t *dt = type_pointer_get_ref(type);
+    if (dt) return dt->type;
+    return NULL;
 }
 
 static inline unsigned char type_pointer_get_default_fc(const type_t *type)

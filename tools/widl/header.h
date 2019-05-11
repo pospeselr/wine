@@ -88,12 +88,12 @@ static inline int is_conformant_array(const type_t *t)
 
 static inline int last_ptr(const type_t *type)
 {
-    return is_ptr(type) && !is_declptr(type_pointer_get_ref(type)->type);
+    return is_ptr(type) && !is_declptr(type_pointer_get_ref_type(type));
 }
 
 static inline int last_array(const type_t *type)
 {
-    return is_array(type) && !is_array(type_array_get_element(type)->type);
+    return is_array(type) && !is_array(type_array_get_element_type(type));
 }
 
 static inline int is_string_type(const attr_list_t *attrs, const type_t *type)
@@ -107,7 +107,7 @@ static inline int is_context_handle(const type_t *type)
     const type_t *t;
     for (t = type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t)->type : type_pointer_get_ref(t)->type)
+         t = type_is_alias(t) ? type_alias_get_aliasee_type(t) : type_pointer_get_ref_type(t))
         if (is_attr(t->attrs, ATTR_CONTEXTHANDLE))
             return 1;
     return 0;

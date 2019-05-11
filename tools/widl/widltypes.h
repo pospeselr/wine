@@ -477,7 +477,6 @@ struct _type_t {
 
 struct _var_t {
   char *name;
-  /* TODO: rename declspec -> decltype */
   decl_type_t decltype;
   attr_list_t *attrs;
   expr_t *eval;

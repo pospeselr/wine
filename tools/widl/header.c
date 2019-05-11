@@ -76,9 +76,9 @@ int is_ptrchain_attr(const var_t *var, enum attr_type t)
             if (is_attr(type->attrs, t))
                 return 1;
             else if (type_is_alias(type))
-                type = type_alias_get_aliasee(type)->type;
+                type = type_alias_get_aliasee_type(type);
             else if (is_ptr(type))
-                type = type_pointer_get_ref(type)->type;
+                type = type_pointer_get_ref_type(type);
             else return 0;
         }
     }
@@ -92,7 +92,7 @@ int is_aliaschain_attr(const type_t *type, enum attr_type attr)
         if (is_attr(t->attrs, attr))
             return 1;
         else if (type_is_alias(t))
-            t = type_alias_get_aliasee(t)->type;
+            t = type_alias_get_aliasee_type(t);
         else return 0;
     }
 }
@@ -364,7 +364,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
       case TYPE_POINTER:
       {
         write_decltype_left(h, type_pointer_get_ref(t), name_type, declonly);
-        write_pointer_left(h, type_pointer_get_ref(t)->type);
+        write_pointer_left(h, type_pointer_get_ref_type(t));
 
         if (dt->typequalifier == TYPE_QUALIFIER_CONST) {
           fprintf(h, "const ");
@@ -379,7 +379,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
         {
           write_decltype_left(h, type_array_get_element(t), name_type, declonly);
           if (type_array_is_decl_as_ptr(t))
-            write_pointer_left(h, type_array_get_element(t)->type);
+            write_pointer_left(h, type_array_get_element_type(t));
         }
         break;
       case TYPE_BASIC:
@@ -465,10 +465,10 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   {
   case TYPE_ARRAY:
   {
-    type_t *elem = type_array_get_element(t)->type;
+    type_t *elemtype = type_array_get_element_type(t);
     if (type_array_is_decl_as_ptr(t))
     {
-      if (!type_is_alias(elem) && is_array(elem) && !type_array_is_decl_as_ptr(elem))
+      if (!type_is_alias(elemtype) && is_array(elemtype) && !type_array_is_decl_as_ptr(elemtype))
         fprintf(h, ")");
     }
     else
@@ -478,12 +478,12 @@ void write_type_right(FILE *h, type_t *t, int is_field)
       else
         fprintf(h, "[%u]", type_array_get_dim(t));
     }
-    write_type_right(h, elem, FALSE);
+    write_type_right(h, elemtype, FALSE);
     break;
   }
   case TYPE_POINTER:
   {
-    type_t *ref = type_pointer_get_ref(t)->type;
+    type_t *ref = type_pointer_get_ref_type(t);
     if (!type_is_alias(ref) && is_array(ref) && !type_array_is_decl_as_ptr(ref))
       fprintf(h, ")");
     write_type_right(h, ref, FALSE);
@@ -639,8 +639,8 @@ unsigned int get_context_handle_offset( const type_t *type )
 
     while (!is_attr( type->attrs, ATTR_CONTEXTHANDLE ))
     {
-        if (type_is_alias( type )) type = type_alias_get_aliasee( type )->type;
-        else if (is_ptr( type )) type = type_pointer_get_ref( type )->type;
+        if (type_is_alias( type )) type = type_alias_get_aliasee_type( type );
+        else if (is_ptr( type )) type = type_pointer_get_ref_type( type );
         else error( "internal error: %s is not a context handle\n", type->name );
     }
     LIST_FOR_EACH_ENTRY( ch, &context_handle_list, context_handle_t, entry )
@@ -659,8 +659,8 @@ unsigned int get_generic_handle_offset( const type_t *type )
 
     while (!is_attr( type->attrs, ATTR_HANDLE ))
     {
-        if (type_is_alias( type )) type = type_alias_get_aliasee( type )->type;
-        else if (is_ptr( type )) type = type_pointer_get_ref( type )->type;
+        if (type_is_alias( type )) type = type_alias_get_aliasee_type( type );
+        else if (is_ptr( type )) type = type_pointer_get_ref_type( type );
         else error( "internal error: %s is not a generic handle\n", type->name );
     }
     LIST_FOR_EACH_ENTRY( gh, &generic_handle_list, generic_handle_t, entry )
@@ -738,11 +738,11 @@ void check_for_additional_prototype_types(type_t *type)
     }
 
     if (type_is_alias(type))
-      type = type_alias_get_aliasee(type)->type;
+      type = type_alias_get_aliasee_type(type);
     else if (is_ptr(type))
-      type = type_pointer_get_ref(type)->type;
+      type = type_pointer_get_ref_type(type);
     else if (is_array(type))
-      type = type_array_get_element(type)->type;
+      type = type_array_get_element_type(type);
     else
       break;
   }
@@ -889,7 +889,7 @@ const type_t* get_explicit_generic_handle_type(const var_t* var)
     const type_t *t;
     for (t = var->decltype.type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t)->type : type_pointer_get_ref(t)->type)
+         t = type_is_alias(t) ? type_alias_get_aliasee_type(t) : type_pointer_get_ref_type(t))
         if ((type_get_type_detect_alias(t) != TYPE_BASIC || type_basic_get_type(t) != TYPE_BASIC_HANDLE) &&
             is_attr(t->attrs, ATTR_HANDLE))
             return t;
