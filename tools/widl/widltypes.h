@@ -648,20 +648,13 @@ static inline int is_global_namespace(const struct namespace *namespace)
     return !namespace->name;
 }
 
-/* TODO: replace calls to init_decltype with init_decltype_ex where appropriate */
-static inline decl_type_t *init_decltype_ex(decl_type_t *decltype, type_t *type, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
-{
-  decltype->type = type;
-  decltype->stgclass=stgclass;
-  decltype->typequalifier=typequalifier;
-  decltype->funcspecifier=funcspecifier;
-
-  return decltype;
-}
-
 static inline decl_type_t* init_decltype(decl_type_t *decltype, type_t *type)
 {
-  return init_decltype_ex(decltype, type, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE);
+    decltype->type = type;
+    decltype->stgclass=STG_NONE;
+    decltype->typequalifier=TYPE_QUALIFIER_NONE;
+    decltype->funcspecifier=FUNCTION_SPECIFIER_NONE;
+    return decltype;
 }
 
 
