@@ -322,14 +322,15 @@ todo_wine
 static void test_module_information(void)
 {
     static const char *event_name = "dbgeng_test_event";
-    unsigned int loaded, unloaded, index;
+    unsigned int loaded, unloaded, index, length;
     DEBUG_MODULE_PARAMETERS params[2];
+    IDebugDataSpaces *dataspaces;
     PROCESS_INFORMATION info;
-    IDebugSymbols *symbols;
+    IDebugSymbols2 *symbols;
     IDebugControl *control;
+    ULONG64 bases[2], base;
+    char buffer[MAX_PATH];
     IDebugClient *client;
-    ULONG64 bases[2];
-    ULONG64 base;
     HANDLE event;
     HRESULT hr;
     BOOL ret;
@@ -340,8 +341,14 @@ static void test_module_information(void)
     hr = client->lpVtbl->QueryInterface(client, &IID_IDebugControl, (void **)&control);
     ok(hr == S_OK, "Failed to get interface pointer, hr %#x.\n", hr);
 
-    hr = client->lpVtbl->QueryInterface(client, &IID_IDebugSymbols, (void **)&symbols);
+    hr = client->lpVtbl->QueryInterface(client, &IID_IDebugSymbols2, (void **)&symbols);
     ok(hr == S_OK, "Failed to get interface pointer, hr %#x.\n", hr);
+
+    hr = client->lpVtbl->QueryInterface(client, &IID_IDebugDataSpaces, (void **)&dataspaces);
+    ok(hr == S_OK, "Failed to get interface pointer, hr %#x.\n", hr);
+
+    hr = control->lpVtbl->IsPointer64Bit(control);
+    ok(hr == E_UNEXPECTED, "Unexpected hr %#x.\n", hr);
 
     event = CreateEventA(NULL, FALSE, FALSE, event_name);
     ok(event != NULL, "Failed to create event.\n");
@@ -355,8 +362,14 @@ static void test_module_information(void)
     hr = client->lpVtbl->AttachProcess(client, 0, info.dwProcessId, DEBUG_ATTACH_NONINVASIVE);
     ok(hr == S_OK, "Failed to attach to process, hr %#x.\n", hr);
 
+    hr = control->lpVtbl->IsPointer64Bit(control);
+    ok(hr == E_UNEXPECTED, "Unexpected hr %#x.\n", hr);
+
     hr = control->lpVtbl->WaitForEvent(control, 0, INFINITE);
     ok(hr == S_OK, "Waiting for event failed, hr %#x.\n", hr);
+
+    hr = control->lpVtbl->IsPointer64Bit(control);
+    ok(SUCCEEDED(hr), "Failed to get pointer length, hr %#x.\n", hr);
 
     /* Number of modules. */
     hr = symbols->lpVtbl->GetNumberModules(symbols, &loaded, &unloaded);
@@ -419,6 +432,43 @@ static void test_module_information(void)
     hr = symbols->lpVtbl->GetModuleParameters(symbols, 1, NULL, loaded, params);
     ok(FAILED(hr), "Unexpected hr %#x.\n", hr);
 
+    /* Image name. */
+    hr = symbols->lpVtbl->GetModuleNameString(symbols, DEBUG_MODNAME_IMAGE, 0, 0, buffer, sizeof(buffer), &length);
+    ok(hr == S_OK, "Failed to get image name, hr %#x.\n", hr);
+    ok(strlen(buffer) + 1 == length, "Unexpected length.\n");
+
+    hr = symbols->lpVtbl->GetModuleNameString(symbols, DEBUG_MODNAME_IMAGE, 0, 0, NULL, sizeof(buffer), &length);
+    ok(hr == S_OK, "Failed to get image name, hr %#x.\n", hr);
+    ok(length > 0, "Unexpected length.\n");
+
+    hr = symbols->lpVtbl->GetModuleNameString(symbols, DEBUG_MODNAME_IMAGE, DEBUG_ANY_ID, base, buffer, sizeof(buffer),
+            &length);
+    ok(hr == S_OK, "Failed to get image name, hr %#x.\n", hr);
+    ok(strlen(buffer) + 1 == length, "Unexpected length.\n");
+
+    hr = symbols->lpVtbl->GetModuleNameString(symbols, DEBUG_MODNAME_IMAGE, 0, 0, buffer, length - 1, &length);
+    ok(hr == S_FALSE, "Failed to get image name, hr %#x.\n", hr);
+    ok(strlen(buffer) + 2 == length, "Unexpected length %u.\n", length);
+
+    hr = symbols->lpVtbl->GetModuleNameString(symbols, DEBUG_MODNAME_IMAGE, 0, 0, NULL, length - 1, NULL);
+    ok(hr == S_FALSE, "Failed to get image name, hr %#x.\n", hr);
+
+    /* Read memory. */
+    base = 0;
+    hr = symbols->lpVtbl->GetModuleByIndex(symbols, 0, &base);
+    ok(hr == S_OK, "Unexpected hr %#x.\n", hr);
+    ok(!!base, "Unexpected module base.\n");
+
+    hr = dataspaces->lpVtbl->ReadVirtual(dataspaces, base, buffer, sizeof(buffer), &length);
+    ok(hr == S_OK, "Failed to read process memory, hr %#x.\n", hr);
+    ok(length == sizeof(buffer), "Unexpected length %u.\n", length);
+    ok(buffer[0] == 'M' && buffer[1] == 'Z', "Unexpected contents.\n");
+
+    memset(buffer, 0, sizeof(buffer));
+    hr = dataspaces->lpVtbl->ReadVirtual(dataspaces, base, buffer, sizeof(buffer), NULL);
+    ok(hr == S_OK, "Failed to read process memory, hr %#x.\n", hr);
+    ok(buffer[0] == 'M' && buffer[1] == 'Z', "Unexpected contents.\n");
+
     hr = client->lpVtbl->DetachProcesses(client);
     ok(hr == S_OK, "Failed to detach, hr %#x.\n", hr);
 
@@ -427,10 +477,12 @@ static void test_module_information(void)
 
     CloseHandle(info.hProcess);
     CloseHandle(info.hThread);
+    CloseHandle(event);
 
     client->lpVtbl->Release(client);
     control->lpVtbl->Release(control);
     symbols->lpVtbl->Release(symbols);
+    dataspaces->lpVtbl->Release(dataspaces);
 }
 
 static void target_proc(const char *event_name, const char *event_ready_name)

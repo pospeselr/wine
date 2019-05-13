@@ -197,6 +197,7 @@ struct wine_input_private {
     int report_descriptor_size;
     BYTE *report_descriptor;
 
+    int button_start;
     BYTE button_map[KEY_MAX];
     BYTE rel_map[HID_REL_MAX];
     BYTE hat_map[8];
@@ -276,6 +277,22 @@ static const BYTE* what_am_I(struct udev_device *dev)
     return Unknown;
 }
 
+static void set_button_value(int index, int value, BYTE* buffer)
+{
+    int bindex = index / 8;
+    int b = index % 8;
+    BYTE mask;
+
+    mask = 1<<b;
+    if (value)
+        buffer[bindex] = buffer[bindex] | mask;
+    else
+    {
+        mask = ~mask;
+        buffer[bindex] = buffer[bindex] & mask;
+    }
+}
+
 static void set_abs_axis_value(struct wine_input_private *ext, int code, int value)
 {
     int index;
@@ -286,32 +303,35 @@ static void set_abs_axis_value(struct wine_input_private *ext, int code, int val
         ext->hat_values[index] = value;
         if ((code - ABS_HAT0X) % 2)
             index--;
+        /* 8 1 2
+         * 7 0 3
+         * 6 5 4 */
         if (ext->hat_values[index] == 0)
         {
             if (ext->hat_values[index+1] == 0)
-                value = 8;
-            else if (ext->hat_values[index+1] < 0)
                 value = 0;
+            else if (ext->hat_values[index+1] < 0)
+                value = 1;
             else
-                value = 4;
+                value = 5;
         }
         else if (ext->hat_values[index] > 0)
         {
             if (ext->hat_values[index+1] == 0)
-                value = 2;
-            else if (ext->hat_values[index+1] < 0)
-                value = 1;
-            else
                 value = 3;
+            else if (ext->hat_values[index+1] < 0)
+                value = 2;
+            else
+                value = 4;
         }
         else
         {
             if (ext->hat_values[index+1] == 0)
-                value = 6;
-            else if (ext->hat_values[index+1] < 0)
                 value = 7;
+            else if (ext->hat_values[index+1] < 0)
+                value = 8;
             else
-                value = 5;
+                value = 6;
         }
         ext->current_report_buffer[ext->hat_map[index]] = value;
     }
@@ -403,16 +423,6 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
     descript_size = sizeof(REPORT_HEADER) + sizeof(REPORT_TAIL);
     report_size = 0;
 
-    /* For now lump all buttons just into incremental usages, Ignore Keys */
-    button_count = count_buttons(ext->base.device_fd, ext->button_map);
-    if (button_count)
-    {
-        descript_size += sizeof(REPORT_BUTTONS);
-        if (button_count % 8)
-            descript_size += sizeof(REPORT_PADDING);
-        report_size = (button_count + 7) / 8;
-    }
-
     abs_count = 0;
     memset(abs_pages, 0, sizeof(abs_pages));
     for (i = 0; i < HID_ABS_MAX; i++)
@@ -422,11 +432,6 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
             abs_pages[ABS_TO_HID_MAP[i][0]][abs_pages[ABS_TO_HID_MAP[i][0]][0]] = i;
 
             ioctl(ext->base.device_fd, EVIOCGABS(i), &(ext->abs_map[i]));
-            if (abs_pages[ABS_TO_HID_MAP[i][0]][0] == 1)
-            {
-                descript_size += sizeof(REPORT_AXIS_HEADER);
-                descript_size += sizeof(REPORT_ABS_AXIS_TAIL);
-            }
         }
     /* Skip page 0, aka HID_USAGE_PAGE_UNDEFINED */
     for (i = 1; i < TOP_ABS_PAGE; i++)
@@ -441,6 +446,8 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
             }
             abs_count++;
         }
+    descript_size += sizeof(REPORT_AXIS_HEADER) * abs_count;
+    descript_size += sizeof(REPORT_ABS_AXIS_TAIL) * abs_count;
 
     rel_count = 0;
     memset(rel_pages, 0, sizeof(rel_pages));
@@ -449,11 +456,6 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
         {
             rel_pages[REL_TO_HID_MAP[i][0]][0]++;
             rel_pages[REL_TO_HID_MAP[i][0]][rel_pages[REL_TO_HID_MAP[i][0]][0]] = i;
-            if (rel_pages[REL_TO_HID_MAP[i][0]][0] == 1)
-            {
-                descript_size += sizeof(REPORT_AXIS_HEADER);
-                descript_size += sizeof(REPORT_REL_AXIS_TAIL);
-            }
         }
     /* Skip page 0, aka HID_USAGE_PAGE_UNDEFINED */
     for (i = 1; i < TOP_REL_PAGE; i++)
@@ -468,6 +470,19 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
             }
             rel_count++;
         }
+    descript_size += sizeof(REPORT_AXIS_HEADER) * rel_count;
+    descript_size += sizeof(REPORT_REL_AXIS_TAIL) * rel_count;
+
+    /* For now lump all buttons just into incremental usages, Ignore Keys */
+    ext->button_start = report_size;
+    button_count = count_buttons(ext->base.device_fd, ext->button_map);
+    if (button_count)
+    {
+        descript_size += sizeof(REPORT_BUTTONS);
+        if (button_count % 8)
+            descript_size += sizeof(REPORT_PADDING);
+        report_size += (button_count + 7) / 8;
+    }
 
     hat_count = 0;
     for (i = ABS_HAT0X; i <=ABS_HAT3X; i+=2)
@@ -479,6 +494,8 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
             report_size++;
             hat_count++;
         }
+    if (hat_count > 0)
+        descript_size += sizeof(REPORT_HATSWITCH);
 
     TRACE("Report Descriptor will be %i bytes\n", descript_size);
     TRACE("Report will be %i bytes\n", report_size);
@@ -495,15 +512,6 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
     report_ptr[IDX_HEADER_PAGE] = device_usage[0];
     report_ptr[IDX_HEADER_USAGE] = device_usage[1];
     report_ptr += sizeof(REPORT_HEADER);
-    if (button_count)
-    {
-        report_ptr = add_button_block(report_ptr, 1, button_count);
-        if (button_count % 8)
-        {
-            BYTE padding = 8 - (button_count % 8);
-            report_ptr = add_padding_block(report_ptr, padding);
-        }
-    }
     if (abs_count)
     {
         for (i = 1; i < TOP_ABS_PAGE; i++)
@@ -530,6 +538,15 @@ static BOOL build_report_descriptor(struct wine_input_private *ext, struct udev_
                     usages[j] = REL_TO_HID_MAP[rel_pages[i][j+1]][1];
                 report_ptr = add_axis_block(report_ptr, rel_pages[i][0], i, usages, FALSE, NULL);
             }
+        }
+    }
+    if (button_count)
+    {
+        report_ptr = add_button_block(report_ptr, 1, button_count);
+        if (button_count % 8)
+        {
+            BYTE padding = 8 - (button_count % 8);
+            report_ptr = add_padding_block(report_ptr, padding);
         }
     }
     if (hat_count)
@@ -596,7 +613,7 @@ static BOOL set_report_from_event(struct wine_input_private *ext, struct input_e
             return FALSE;
 #endif
         case EV_KEY:
-            set_button_value(ext->button_map[ie->code], ie->value, ext->current_report_buffer);
+            set_button_value(ext->button_start + ext->button_map[ie->code], ie->value, ext->current_report_buffer);
             return FALSE;
         case EV_ABS:
             set_abs_axis_value(ext, ie->code, ie->value);
@@ -765,7 +782,7 @@ static DWORD CALLBACK device_report_thread(void *args)
             break;
         size = read(plfds[0].fd, report_buffer, sizeof(report_buffer));
         if (size == -1)
-            TRACE_(hid_report)("Read failed. Likely an unplugged device\n");
+            TRACE_(hid_report)("Read failed. Likely an unplugged device %d %s\n", errno, strerror(errno));
         else if (size == 0)
             TRACE_(hid_report)("Failed to read report\n");
         else
@@ -827,6 +844,7 @@ static NTSTATUS hidraw_set_output_report(DEVICE_OBJECT *device, UCHAR id, BYTE *
     }
     else
     {
+        TRACE("write failed: %d %d %s\n", rc, errno, strerror(errno));
         *written = 0;
         return STATUS_UNSUCCESSFUL;
     }
@@ -847,6 +865,7 @@ static NTSTATUS hidraw_get_feature_report(DEVICE_OBJECT *device, UCHAR id, BYTE 
     }
     else
     {
+        TRACE_(hid_report)("ioctl(HIDIOCGFEATURE(%d)) failed: %d %s\n", length, errno, strerror(errno));
         *read = 0;
         return STATUS_UNSUCCESSFUL;
     }
@@ -887,6 +906,7 @@ static NTSTATUS hidraw_set_feature_report(DEVICE_OBJECT *device, UCHAR id, BYTE 
     }
     else
     {
+        TRACE_(hid_report)("ioctl(HIDIOCSFEATURE(%d)) failed: %d %s\n", length, errno, strerror(errno));
         *written = 0;
         return STATUS_UNSUCCESSFUL;
     }

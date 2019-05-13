@@ -742,16 +742,16 @@
 # @ stub GetNLSVersionEx
 # @ stub GetNumaAvailableMemory
 @ stdcall GetNumaAvailableMemoryNode(long ptr)
-# @ stub GetNumaAvailableMemoryNodeEx
+@ stdcall GetNumaAvailableMemoryNodeEx(long ptr)
 @ stdcall GetNumaHighestNodeNumber(ptr)
 # @ stub GetNumaNodeNumberFromHandle
 @ stdcall GetNumaNodeProcessorMask(long ptr)
 @ stdcall GetNumaNodeProcessorMaskEx(long ptr)
 # @ stub GetNumaProcessorMap
 @ stdcall GetNumaProcessorNode(long ptr)
-# @ stub GetNumaProcessorNodeEx
-# @ stub GetNumaProximityNode
-# @ stub GetNumaProximityNodeEx
+@ stdcall GetNumaProcessorNodeEx(ptr ptr)
+@ stdcall GetNumaProximityNode(long ptr)
+@ stdcall GetNumaProximityNodeEx(long ptr)
 @ stdcall GetNumberFormatA(long long str ptr ptr long)
 @ stdcall GetNumberFormatEx(wstr long wstr ptr ptr long)
 @ stdcall GetNumberFormatW(long long wstr ptr ptr long)
@@ -1018,7 +1018,7 @@
 @ stdcall K32GetProcessImageFileNameW(long ptr long)
 @ stdcall K32GetProcessMemoryInfo(long ptr long)
 @ stdcall K32GetWsChanges(long ptr long)
-# @ stub K32GetWsChangesEx
+@ stdcall K32GetWsChangesEx(long ptr ptr)
 @ stdcall K32InitializeProcessForWsWatch(long)
 @ stdcall K32QueryWorkingSet(long ptr long)
 @ stdcall K32QueryWorkingSetEx(long ptr long)
@@ -1076,7 +1076,7 @@
 @ stdcall -i386 -private MapLS(ptr) krnl386.exe16.MapLS
 @ stdcall -i386 -private MapSL(long) krnl386.exe16.MapSL
 @ stdcall -i386 -private MapSLFix(long) krnl386.exe16.MapSLFix
-# @ stub MapUserPhysicalPages
+@ stdcall MapUserPhysicalPages(ptr long ptr)
 # @ stub MapUserPhysicalPagesScatter
 @ stdcall MapViewOfFile(long long long long long)
 @ stdcall MapViewOfFileEx(long long long long long ptr)

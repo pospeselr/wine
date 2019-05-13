@@ -149,7 +149,7 @@ static HRESULT WINAPI mediatype_CompareItem(IMFMediaType *iface, REFGUID key, RE
 {
     struct media_type *media_type = impl_from_IMFMediaType(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(&media_type->attributes, key, value, result);
 }
@@ -270,7 +270,7 @@ static HRESULT WINAPI mediatype_SetItem(IMFMediaType *iface, REFGUID key, REFPRO
 {
     struct media_type *media_type = impl_from_IMFMediaType(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(&media_type->attributes, key, value);
 }
@@ -324,7 +324,7 @@ static HRESULT WINAPI mediatype_SetGUID(IMFMediaType *iface, REFGUID key, REFGUI
 {
     struct media_type *media_type = impl_from_IMFMediaType(iface);
 
-    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_guid(value));
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
 
     return attributes_SetGUID(&media_type->attributes, key, value);
 }
@@ -695,7 +695,7 @@ static HRESULT WINAPI stream_descriptor_CompareItem(IMFStreamDescriptor *iface, 
 {
     struct stream_desc *stream_desc = impl_from_IMFStreamDescriptor(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(&stream_desc->attributes, key, value, result);
 }
@@ -817,7 +817,7 @@ static HRESULT WINAPI stream_descriptor_SetItem(IMFStreamDescriptor *iface, REFG
 {
     struct stream_desc *stream_desc = impl_from_IMFStreamDescriptor(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(&stream_desc->attributes, key, value);
 }
@@ -871,7 +871,7 @@ static HRESULT WINAPI stream_descriptor_SetGUID(IMFStreamDescriptor *iface, REFG
 {
     struct stream_desc *stream_desc = impl_from_IMFStreamDescriptor(iface);
 
-    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_guid(value));
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
 
     return attributes_SetGUID(&stream_desc->attributes, key, value);
 }
@@ -1271,7 +1271,7 @@ static HRESULT WINAPI presentation_descriptor_CompareItem(IMFPresentationDescrip
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(&presentation_desc->attributes, key, value, result);
 }
@@ -1396,7 +1396,7 @@ static HRESULT WINAPI presentation_descriptor_SetItem(IMFPresentationDescriptor 
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(&presentation_desc->attributes, key, value);
 }
@@ -1450,7 +1450,7 @@ static HRESULT WINAPI presentation_descriptor_SetGUID(IMFPresentationDescriptor 
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_guid(value));
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
 
     return attributes_SetGUID(&presentation_desc->attributes, key, value);
 }
@@ -1616,7 +1616,8 @@ static HRESULT WINAPI presentation_descriptor_Clone(IMFPresentationDescriptor *i
         object->descriptors[i] = presentation_desc->descriptors[i];
         IMFStreamDescriptor_AddRef(object->descriptors[i].descriptor);
     }
-    /* FIXME: copy attributes */
+
+    attributes_CopyAllItems(&presentation_desc->attributes, (IMFAttributes *)&object->IMFPresentationDescriptor_iface);
 
     LeaveCriticalSection(&presentation_desc->cs);
 

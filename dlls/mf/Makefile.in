@@ -1,8 +1,14 @@
 MODULE    = mf.dll
 IMPORTLIB = mf
-IMPORTS   = mfplat
+IMPORTS   = mfplat uuid mfuuid
 
 C_SRCS = \
 	main.c \
+	samplegrabber.c \
+	sar.c \
 	session.c \
 	topology.c
+
+IDL_SRCS = mf.idl
+
+RC_SRCS = mf.rc

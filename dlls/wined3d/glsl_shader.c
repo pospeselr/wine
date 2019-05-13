@@ -420,26 +420,43 @@ static void shader_glsl_add_version_declaration(struct wined3d_string_buffer *bu
     shader_addline(buffer, "#version %u\n", shader_glsl_get_version(gl_info));
 }
 
-static void shader_glsl_append_imm_vec4(struct wined3d_string_buffer *buffer, const float *values,
-        const struct wined3d_gl_info *gl_info)
+static void shader_glsl_append_imm_vec(struct wined3d_string_buffer *buffer,
+        const float *values, unsigned int size, const struct wined3d_gl_info *gl_info)
 {
-    char str[4][17];
+    const int *int_values = (const int *)values;
+    unsigned int i;
+    char str[17];
 
-    wined3d_ftoa(values[0], str[0]);
-    wined3d_ftoa(values[1], str[1]);
-    wined3d_ftoa(values[2], str[2]);
-    wined3d_ftoa(values[3], str[3]);
-
-    if (gl_info->supported[ARB_SHADER_BIT_ENCODING])
+    if (!gl_info->supported[ARB_SHADER_BIT_ENCODING])
     {
-        const unsigned int *uint_values = (const unsigned int *)values;
+        if (size > 1)
+            shader_addline(buffer, "vec%u(", size);
 
-        shader_addline(buffer, "uintBitsToFloat(uvec4(%#xu, %#xu, %#xu, %#xu))\n"
-                "        /* %s, %s, %s, %s */", uint_values[0], uint_values[1],
-                uint_values[2], uint_values[3], str[0], str[1], str[2], str[3]);
+        for (i = 0; i < size; ++i)
+        {
+            wined3d_ftoa(values[i], str);
+            shader_addline(buffer, i ? ", %s" : "%s", str);
+        }
+
+        if (size > 1)
+            shader_addline(buffer, ")");
+
+        return;
     }
-    else
-        shader_addline(buffer, "vec4(%s, %s, %s, %s)", str[0], str[1], str[2], str[3]);
+
+    shader_addline(buffer, "intBitsToFloat(");
+    if (size > 1)
+        shader_addline(buffer, "ivec%u(", size);
+
+    for (i = 0; i < size; ++i)
+    {
+        wined3d_ftoa(values[i], str);
+        shader_addline(buffer, i ? ", %#x /* %s */" : "%#x /* %s */", int_values[i], str);
+    }
+
+    if (size > 1)
+        shader_addline(buffer, ")");
+    shader_addline(buffer, ")");
 }
 
 static void shader_glsl_append_imm_ivec(struct wined3d_string_buffer *buffer,
@@ -688,10 +705,11 @@ static void shader_glsl_load_samplers_range(const struct wined3d_gl_info *gl_inf
 static unsigned int shader_glsl_map_tex_unit(const struct wined3d_context *context,
         const struct wined3d_shader_version *shader_version, unsigned int sampler_idx)
 {
-    const DWORD *tex_unit_map;
+    const struct wined3d_context_gl *context_gl = wined3d_context_gl_const(context);
+    const unsigned int *tex_unit_map;
     unsigned int base, count;
 
-    tex_unit_map = context_get_tex_unit_mapping(context, shader_version, &base, &count);
+    tex_unit_map = wined3d_context_gl_get_tex_unit_mapping(context_gl, shader_version, &base, &count);
     if (sampler_idx >= count)
         return WINED3D_UNMAPPED_STAGE;
     if (!tex_unit_map)
@@ -714,9 +732,10 @@ static void shader_glsl_append_sampler_binding_qualifier(struct wined3d_string_b
 static void shader_glsl_load_samplers(const struct wined3d_context *context,
         struct shader_glsl_priv *priv, GLuint program_id, const struct wined3d_shader_reg_maps *reg_maps)
 {
+    const struct wined3d_context_gl *context_gl = wined3d_context_gl_const(context);
     const struct wined3d_gl_info *gl_info = context->gl_info;
     const struct wined3d_shader_version *shader_version;
-    const DWORD *tex_unit_map;
+    const unsigned int *tex_unit_map;
     unsigned int base, count;
     const char *prefix;
 
@@ -725,7 +744,7 @@ static void shader_glsl_load_samplers(const struct wined3d_context *context,
 
     shader_version = reg_maps ? &reg_maps->shader_version : NULL;
     prefix = shader_glsl_get_prefix(shader_version ? shader_version->type : WINED3D_SHADER_TYPE_PIXEL);
-    tex_unit_map = context_get_tex_unit_mapping(context, shader_version, &base, &count);
+    tex_unit_map = wined3d_context_gl_get_tex_unit_mapping(context_gl, shader_version, &base, &count);
     shader_glsl_load_samplers_range(gl_info, priv, program_id, prefix, base, count, tex_unit_map);
 }
 
@@ -2796,7 +2815,7 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
         LIST_FOR_EACH_ENTRY(lconst, &shader->constantsF, struct wined3d_shader_lconst, entry)
         {
             shader_addline(buffer, "const vec4 %s_lc%u = ", prefix, lconst->idx);
-            shader_glsl_append_imm_vec4(buffer, (const float *)lconst->value, gl_info);
+            shader_glsl_append_imm_vec(buffer, (const float *)lconst->value, ARRAY_SIZE(lconst->value), gl_info);
             shader_addline(buffer, ";\n");
         }
     }
@@ -2903,7 +2922,6 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
     const struct wined3d_gl_info *gl_info = ctx->gl_info;
     const char *prefix = shader_glsl_get_prefix(version->type);
     struct glsl_src_param rel_param0, rel_param1;
-    char imm_str[4][17];
 
     if (reg->idx[0].offset != ~0u && reg->idx[0].rel_addr)
         shader_glsl_add_src_param_ext(ctx, reg->idx[0].rel_addr, WINED3DSP_WRITEMASK_0,
@@ -3139,15 +3157,8 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
                         case WINED3D_DATA_UNORM:
                         case WINED3D_DATA_SNORM:
                         case WINED3D_DATA_FLOAT:
-                            if (gl_info->supported[ARB_SHADER_BIT_ENCODING])
-                            {
-                                string_buffer_sprintf(register_name, "uintBitsToFloat(%#xu)", reg->u.immconst_data[0]);
-                            }
-                            else
-                            {
-                                wined3d_ftoa(*(const float *)reg->u.immconst_data, imm_str[0]);
-                                string_buffer_sprintf(register_name, "%s", imm_str[0]);
-                            }
+                            string_buffer_clear(register_name);
+                            shader_glsl_append_imm_vec(register_name, (const float *)reg->u.immconst_data, 1, gl_info);
                             break;
                         case WINED3D_DATA_INT:
                             string_buffer_sprintf(register_name, "%#x", reg->u.immconst_data[0]);
@@ -3169,21 +3180,8 @@ static void shader_glsl_get_register_name(const struct wined3d_shader_register *
                         case WINED3D_DATA_UNORM:
                         case WINED3D_DATA_SNORM:
                         case WINED3D_DATA_FLOAT:
-                            if (gl_info->supported[ARB_SHADER_BIT_ENCODING])
-                            {
-                                string_buffer_sprintf(register_name, "uintBitsToFloat(uvec4(%#xu, %#xu, %#xu, %#xu))",
-                                        reg->u.immconst_data[0], reg->u.immconst_data[1],
-                                        reg->u.immconst_data[2], reg->u.immconst_data[3]);
-                            }
-                            else
-                            {
-                                wined3d_ftoa(*(const float *)&reg->u.immconst_data[0], imm_str[0]);
-                                wined3d_ftoa(*(const float *)&reg->u.immconst_data[1], imm_str[1]);
-                                wined3d_ftoa(*(const float *)&reg->u.immconst_data[2], imm_str[2]);
-                                wined3d_ftoa(*(const float *)&reg->u.immconst_data[3], imm_str[3]);
-                                string_buffer_sprintf(register_name, "vec4(%s, %s, %s, %s)",
-                                        imm_str[0], imm_str[1], imm_str[2], imm_str[3]);
-                            }
+                            string_buffer_clear(register_name);
+                            shader_glsl_append_imm_vec(register_name, (const float *)reg->u.immconst_data, 4, gl_info);
                             break;
                         case WINED3D_DATA_INT:
                             string_buffer_sprintf(register_name, "ivec4(%#x, %#x, %#x, %#x)",
@@ -7968,10 +7966,10 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
     if (args->srgb_correction)
     {
         shader_addline(buffer, "const vec4 srgb_const0 = ");
-        shader_glsl_append_imm_vec4(buffer, wined3d_srgb_const0, gl_info);
+        shader_glsl_append_imm_vec(buffer, wined3d_srgb_const0, 4, gl_info);
         shader_addline(buffer, ";\n");
         shader_addline(buffer, "const vec4 srgb_const1 = ");
-        shader_glsl_append_imm_vec4(buffer, wined3d_srgb_const1, gl_info);
+        shader_glsl_append_imm_vec(buffer, wined3d_srgb_const1, 4, gl_info);
         shader_addline(buffer, ";\n");
     }
     if (reg_maps->vpos || reg_maps->usesdsy)
@@ -9825,10 +9823,10 @@ static GLuint shader_glsl_generate_ffp_fragment_shader(struct shader_glsl_priv *
     if (settings->sRGB_write)
     {
         shader_addline(buffer, "const vec4 srgb_const0 = ");
-        shader_glsl_append_imm_vec4(buffer, wined3d_srgb_const0, gl_info);
+        shader_glsl_append_imm_vec(buffer, wined3d_srgb_const0, 4, gl_info);
         shader_addline(buffer, ";\n");
         shader_addline(buffer, "const vec4 srgb_const1 = ");
-        shader_glsl_append_imm_vec4(buffer, wined3d_srgb_const1, gl_info);
+        shader_glsl_append_imm_vec(buffer, wined3d_srgb_const1, 4, gl_info);
         shader_addline(buffer, ";\n");
     }
 
@@ -13197,6 +13195,14 @@ static BOOL glsl_blitter_supported(enum wined3d_blit_op blit_op, const struct wi
         return FALSE;
     }
 
+    if (wined3d_settings.offscreen_rendering_mode == ORM_FBO
+            && !((dst_format->flags[WINED3D_GL_RES_TYPE_TEX_2D] & WINED3DFMT_FLAG_FBO_ATTACHABLE)
+            || (dst_resource->bind_flags & WINED3D_BIND_RENDER_TARGET)))
+    {
+        TRACE("Destination texture is not FBO attachable.\n");
+        return FALSE;
+    }
+
     TRACE("Returning supported.\n");
     return TRUE;
 }
@@ -13301,7 +13307,7 @@ static DWORD glsl_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_bli
         wined3d_texture_load(src_texture, context, FALSE);
     }
 
-    context_apply_blit_state(context, device);
+    wined3d_context_gl_apply_blit_state(wined3d_context_gl(context), device);
 
     if (dst_location == WINED3D_LOCATION_DRAWABLE)
     {

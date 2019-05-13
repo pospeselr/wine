@@ -330,13 +330,13 @@
 @ stub IoAttachDeviceByPointer
 @ stdcall IoAttachDeviceToDeviceStack(ptr ptr)
 @ stub IoAttachDeviceToDeviceStackSafe
-@ stub IoBuildAsynchronousFsdRequest
+@ stdcall IoBuildAsynchronousFsdRequest(long ptr ptr long ptr ptr)
 @ stdcall IoBuildDeviceIoControlRequest(long ptr ptr long ptr long long ptr ptr)
 @ stub IoBuildPartialMdl
 @ stdcall IoBuildSynchronousFsdRequest(long ptr ptr long ptr ptr ptr)
 @ stdcall IoCallDriver(ptr ptr)
 @ stub IoCancelFileOpen
-@ stub IoCancelIrp
+@ stdcall IoCancelIrp(ptr)
 @ stub IoCheckDesiredAccess
 @ stub IoCheckEaBufferValidity
 @ stub IoCheckFunctionAccess
@@ -383,7 +383,7 @@
 @ stub IoFreeErrorLogEntry
 @ stdcall IoFreeIrp(ptr)
 @ stdcall IoFreeMdl(ptr)
-@ stub IoFreeWorkItem
+@ stdcall IoFreeWorkItem(ptr)
 @ stdcall IoGetAttachedDevice(ptr)
 @ stdcall IoGetAttachedDeviceReference(ptr)
 @ stub IoGetBaseFileSystemDeviceObject
@@ -428,7 +428,7 @@
 @ stub IoQueryFileInformation
 @ stub IoQueryVolumeInformation
 @ stub IoQueueThreadIrp
-@ stub IoQueueWorkItem
+@ stdcall IoQueueWorkItem(ptr ptr long ptr)
 @ stub IoRaiseHardError
 @ stub IoRaiseInformationalHardError
 @ stub IoReadDiskSignature
@@ -733,7 +733,7 @@
 @ stdcall MmUnlockPagableImageSection(ptr)
 @ stdcall MmUnlockPages(ptr)
 @ stdcall MmUnmapIoSpace(ptr long)
-@ stub MmUnmapLockedPages
+@ stdcall MmUnmapLockedPages(ptr ptr)
 @ stub MmUnmapReservedMapping
 @ stub MmUnmapVideoDisplay
 @ stub MmUnmapViewInSessionSpace
@@ -822,7 +822,7 @@
 @ stub ObLogSecurityDescriptor
 @ stub ObMakeTemporaryObject
 @ stub ObOpenObjectByName
-@ stub ObOpenObjectByPointer
+@ stdcall ObOpenObjectByPointer(ptr long ptr long ptr long ptr)
 @ stdcall ObQueryNameString(ptr ptr long ptr)
 @ stub ObQueryObjectAuditingByHandle
 @ stdcall ObReferenceObjectByHandle(long long ptr long ptr ptr)
@@ -898,7 +898,7 @@
 @ stdcall -arch=x86_64 PsGetProcessWow64Process(ptr)
 @ stub PsGetThreadFreezeCount
 @ stub PsGetThreadHardErrorsAreDisabled
-@ stub PsGetThreadId
+@ stdcall PsGetThreadId(ptr)
 @ stub PsGetThreadProcess
 @ stub PsGetThreadProcessId
 @ stub PsGetThreadSessionId
@@ -906,9 +906,9 @@
 @ stub PsGetThreadWin32Thread
 @ stdcall PsGetVersion(ptr ptr ptr ptr)
 @ stdcall PsImpersonateClient(ptr ptr long long long)
-@ stub PsInitialSystemProcess
+@ extern PsInitialSystemProcess
 @ stub PsIsProcessBeingDebugged
-@ stub PsIsSystemThread
+@ stdcall PsIsSystemThread(ptr)
 @ stub PsIsThreadImpersonating
 @ stub PsIsThreadTerminating
 @ stub PsJobType

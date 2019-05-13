@@ -1460,6 +1460,15 @@ typedef enum _DIRECTORY_NOTIFY_INFORMATION_CLASS {
     DirectoryNotifyExtendedInformation
 } DIRECTORY_NOTIFY_INFORMATION_CLASS, *PDIRECTORY_NOTIFY_INFORMATION_CLASS;
 
+typedef enum _WORK_QUEUE_TYPE {
+    CriticalWorkQueue,
+    DelayedWorkQueue,
+    HyperCriticalWorkQueue,
+    MaximumWorkQueue
+} WORK_QUEUE_TYPE;
+
+typedef void (WINAPI *PIO_WORKITEM_ROUTINE)(PDEVICE_OBJECT,void*);
+
 NTSTATUS WINAPI ObCloseHandle(IN HANDLE handle);
 
 #ifdef NONAMELESSUNION
@@ -1484,6 +1493,9 @@ NTSTATUS WINAPI ObCloseHandle(IN HANDLE handle);
 # endif
 #endif
 
+#define IoSetCancelRoutine(irp, routine) \
+    ((PDRIVER_CANCEL)InterlockedExchangePointer((void **)&(irp)->CancelRoutine, routine))
+
 static inline void IoSetCompletionRoutine(IRP *irp, PIO_COMPLETION_ROUTINE routine, void *context,
                                           BOOLEAN on_success, BOOLEAN on_error, BOOLEAN on_cancel)
 {
@@ -1494,6 +1506,11 @@ static inline void IoSetCompletionRoutine(IRP *irp, PIO_COMPLETION_ROUTINE routi
     if (on_success) irpsp->Control |= SL_INVOKE_ON_SUCCESS;
     if (on_error)   irpsp->Control |= SL_INVOKE_ON_ERROR;
     if (on_cancel)  irpsp->Control |= SL_INVOKE_ON_CANCEL;
+}
+
+static inline void IoMarkIrpPending(IRP *irp)
+{
+    IoGetCurrentIrpStackLocation(irp)->Control |= SL_PENDING_RETURNED;
 }
 
 #define KernelMode 0
@@ -1543,10 +1560,13 @@ NTSTATUS  WINAPI IoAllocateDriverObjectExtension(PDRIVER_OBJECT,PVOID,ULONG,PVOI
 PVOID     WINAPI IoAllocateErrorLogEntry(PVOID,UCHAR);
 PIRP      WINAPI IoAllocateIrp(CCHAR,BOOLEAN);
 PMDL      WINAPI IoAllocateMdl(PVOID,ULONG,BOOLEAN,BOOLEAN,IRP*);
+PIO_WORKITEM WINAPI IoAllocateWorkItem(PDEVICE_OBJECT);
 PDEVICE_OBJECT WINAPI IoAttachDeviceToDeviceStack(PDEVICE_OBJECT,PDEVICE_OBJECT);
+PIRP      WINAPI IoBuildAsynchronousFsdRequest(ULONG,DEVICE_OBJECT*,void*,ULONG,LARGE_INTEGER*,IO_STATUS_BLOCK*);
 PIRP      WINAPI IoBuildDeviceIoControlRequest(ULONG,DEVICE_OBJECT*,PVOID,ULONG,PVOID,ULONG,BOOLEAN,PKEVENT,IO_STATUS_BLOCK*);
 PIRP      WINAPI IoBuildSynchronousFsdRequest(ULONG,DEVICE_OBJECT*,PVOID,ULONG,PLARGE_INTEGER,PKEVENT,IO_STATUS_BLOCK*);
 NTSTATUS  WINAPI IoCallDriver(DEVICE_OBJECT*,IRP*);
+BOOLEAN   WINAPI IoCancelIrp(IRP*);
 VOID      WINAPI IoCompleteRequest(IRP*,UCHAR);
 NTSTATUS  WINAPI IoCreateDevice(DRIVER_OBJECT*,ULONG,UNICODE_STRING*,DEVICE_TYPE,ULONG,BOOLEAN,DEVICE_OBJECT**);
 NTSTATUS  WINAPI IoCreateDriver(UNICODE_STRING*,PDRIVER_INITIALIZE);
@@ -1557,6 +1577,7 @@ void      WINAPI IoDeleteDriver(DRIVER_OBJECT*);
 NTSTATUS  WINAPI IoDeleteSymbolicLink(UNICODE_STRING*);
 void      WINAPI IoFreeIrp(IRP*);
 void      WINAPI IoFreeMdl(MDL*);
+void      WINAPI IoFreeWorkItem(PIO_WORKITEM);
 PEPROCESS WINAPI IoGetCurrentProcess(void);
 NTSTATUS  WINAPI IoGetDeviceInterfaces(const GUID*,PDEVICE_OBJECT,ULONG,PWSTR*);
 NTSTATUS  WINAPI IoGetDeviceObjectPointer(UNICODE_STRING*,ACCESS_MASK,PFILE_OBJECT*,PDEVICE_OBJECT*);
@@ -1566,6 +1587,7 @@ PDEVICE_OBJECT WINAPI IoGetRelatedDeviceObject(PFILE_OBJECT);
 void      WINAPI IoInitializeIrp(IRP*,USHORT,CCHAR);
 VOID      WINAPI IoInitializeRemoveLockEx(PIO_REMOVE_LOCK,ULONG,ULONG,ULONG,ULONG);
 void      WINAPI IoInvalidateDeviceRelations(PDEVICE_OBJECT,DEVICE_RELATION_TYPE);
+void      WINAPI IoQueueWorkItem(PIO_WORKITEM,PIO_WORKITEM_ROUTINE,WORK_QUEUE_TYPE,void*);
 NTSTATUS  WINAPI IoRegisterDeviceInterface(PDEVICE_OBJECT,const GUID*,PUNICODE_STRING,PUNICODE_STRING);
 void      WINAPI IoReleaseCancelSpinLock(KIRQL);
 NTSTATUS  WINAPI IoSetDeviceInterfaceState(UNICODE_STRING*,BOOLEAN);
@@ -1615,6 +1637,7 @@ void *    WINAPI MmGetSystemRoutineAddress(UNICODE_STRING*);
 PVOID     WINAPI MmMapLockedPagesSpecifyCache(PMDL,KPROCESSOR_MODE,MEMORY_CACHING_TYPE,PVOID,ULONG,ULONG);
 MM_SYSTEMSIZE WINAPI MmQuerySystemSize(void);
 void      WINAPI MmProbeAndLockPages(PMDLX, KPROCESSOR_MODE, LOCK_OPERATION);
+void      WINAPI MmUnmapLockedPages(void*, PMDL);
 
 static inline void *MmGetSystemAddressForMdlSafe(MDL *mdl, ULONG priority)
 {

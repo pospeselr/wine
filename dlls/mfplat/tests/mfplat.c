@@ -36,6 +36,7 @@ DEFINE_GUID(DUMMY_CLSID, 0x12345678,0x1234,0x1234,0x12,0x13,0x14,0x15,0x16,0x17,
 DEFINE_GUID(DUMMY_GUID1, 0x12345678,0x1234,0x1234,0x21,0x21,0x21,0x21,0x21,0x21,0x21,0x21);
 DEFINE_GUID(DUMMY_GUID2, 0x12345678,0x1234,0x1234,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22);
 DEFINE_GUID(DUMMY_GUID3, 0x12345678,0x1234,0x1234,0x23,0x23,0x23,0x23,0x23,0x23,0x23,0x23);
+DEFINE_GUID(CLSID_FileSchemeHandler, 0x477ec299, 0x1421, 0x4bdd, 0x97, 0x1f, 0x7c, 0xcb, 0x93, 0x3f, 0x21, 0xad);
 
 #undef INITGUID
 #include <guiddef.h>
@@ -63,6 +64,7 @@ static HRESULT (WINAPI *pMFAddPeriodicCallback)(MFPERIODICCALLBACK callback, IUn
 static HRESULT (WINAPI *pMFRemovePeriodicCallback)(DWORD key);
 
 static const WCHAR mp4file[] = {'t','e','s','t','.','m','p','4',0};
+static const WCHAR fileschemeW[] = {'f','i','l','e',':','/','/',0};
 
 static WCHAR *load_resource(const WCHAR *name)
 {
@@ -91,6 +93,48 @@ static WCHAR *load_resource(const WCHAR *name)
 
     return pathW;
 }
+
+struct test_callback
+{
+    IMFAsyncCallback IMFAsyncCallback_iface;
+    HANDLE event;
+};
+
+static struct test_callback *impl_from_IMFAsyncCallback(IMFAsyncCallback *iface)
+{
+    return CONTAINING_RECORD(iface, struct test_callback, IMFAsyncCallback_iface);
+}
+
+static HRESULT WINAPI testcallback_QueryInterface(IMFAsyncCallback *iface, REFIID riid, void **obj)
+{
+    if (IsEqualIID(riid, &IID_IMFAsyncCallback) ||
+            IsEqualIID(riid, &IID_IUnknown))
+    {
+        *obj = iface;
+        IMFAsyncCallback_AddRef(iface);
+        return S_OK;
+    }
+
+    *obj = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI testcallback_AddRef(IMFAsyncCallback *iface)
+{
+    return 2;
+}
+
+static ULONG WINAPI testcallback_Release(IMFAsyncCallback *iface)
+{
+    return 1;
+}
+
+static HRESULT WINAPI testcallback_GetParameters(IMFAsyncCallback *iface, DWORD *flags, DWORD *queue)
+{
+    ok(flags != NULL && queue != NULL, "Unexpected arguments.\n");
+    return E_NOTIMPL;
+}
+
 
 static BOOL check_clsid(CLSID *clsids, UINT32 count)
 {
@@ -148,12 +192,11 @@ if(0)
     count = 0;
     ret = MFTEnum(MFT_CATEGORY_OTHER, 0, NULL, NULL, NULL, NULL, &count);
     ok(ret == E_POINTER, "Failed to enumerate filters: %x\n", ret);
-    ok(count == 0, "Expected count > 0\n");
+    ok(count == 0, "Expected count == 0\n");
 
     clsids = NULL;
     ret = MFTEnum(MFT_CATEGORY_OTHER, 0, NULL, NULL, NULL, &clsids, NULL);
     ok(ret == E_POINTER, "Failed to enumerate filters: %x\n", ret);
-    ok(count == 0, "Expected count > 0\n");
 }
 
     count = 0;
@@ -209,22 +252,100 @@ if(0)
     ok(ret == S_OK || broken(ret == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)), "got %x\n", ret);
 }
 
+static HRESULT WINAPI test_create_from_url_callback_Invoke(IMFAsyncCallback *iface, IMFAsyncResult *result)
+{
+    struct test_callback *callback = impl_from_IMFAsyncCallback(iface);
+    IMFSourceResolver *resolver;
+    IUnknown *object, *object2;
+    MF_OBJECT_TYPE obj_type;
+    HRESULT hr;
+
+    ok(!!result, "Unexpected result object.\n");
+
+    resolver = (IMFSourceResolver *)IMFAsyncResult_GetStateNoAddRef(result);
+
+    object = NULL;
+    hr = IMFSourceResolver_EndCreateObjectFromURL(resolver, result, &obj_type, &object);
+todo_wine
+    ok(hr == S_OK, "Failed to create an object, hr %#x.\n", hr);
+
+    hr = IMFAsyncResult_GetObject(result, &object2);
+    ok(hr == S_OK, "Failed to get result object, hr %#x.\n", hr);
+todo_wine
+    ok(object2 == object, "Unexpected object.\n");
+
+    if (object)
+        IUnknown_Release(object);
+    IUnknown_Release(object2);
+
+    SetEvent(callback->event);
+
+    return S_OK;
+}
+
+static const IMFAsyncCallbackVtbl test_create_from_url_callback_vtbl =
+{
+    testcallback_QueryInterface,
+    testcallback_AddRef,
+    testcallback_Release,
+    testcallback_GetParameters,
+    test_create_from_url_callback_Invoke,
+};
+
+static HRESULT WINAPI test_create_from_file_handler_callback_Invoke(IMFAsyncCallback *iface, IMFAsyncResult *result)
+{
+    struct test_callback *callback = impl_from_IMFAsyncCallback(iface);
+    IMFSchemeHandler *handler;
+    IUnknown *object, *object2;
+    MF_OBJECT_TYPE obj_type;
+    HRESULT hr;
+
+    ok(!!result, "Unexpected result object.\n");
+
+    handler = (IMFSchemeHandler *)IMFAsyncResult_GetStateNoAddRef(result);
+
+    hr = IMFSchemeHandler_EndCreateObject(handler, result, &obj_type, &object);
+    ok(hr == S_OK, "Failed to create an object, hr %#x.\n", hr);
+
+    hr = IMFAsyncResult_GetObject(result, &object2);
+    ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
+
+    IUnknown_Release(object);
+
+    SetEvent(callback->event);
+
+    return S_OK;
+}
+
+static const IMFAsyncCallbackVtbl test_create_from_file_handler_callback_vtbl =
+{
+    testcallback_QueryInterface,
+    testcallback_AddRef,
+    testcallback_Release,
+    testcallback_GetParameters,
+    test_create_from_file_handler_callback_Invoke,
+};
+
 static void test_source_resolver(void)
 {
+    static const WCHAR file_type[] = {'v','i','d','e','o','/','m','p','4',0};
+    struct test_callback callback = { { &test_create_from_url_callback_vtbl } };
+    struct test_callback callback2 = { { &test_create_from_file_handler_callback_vtbl } };
     IMFSourceResolver *resolver, *resolver2;
-    IMFByteStream *bytestream;
+    IMFSchemeHandler *scheme_handler;
     IMFAttributes *attributes;
     IMFMediaSource *mediasource;
     IMFPresentationDescriptor *descriptor;
     IMFMediaTypeHandler *handler;
+    BOOL selected, do_uninit;
     MF_OBJECT_TYPE obj_type;
     IMFStreamDescriptor *sd;
+    IUnknown *cancel_cookie;
+    IMFByteStream *stream;
+    WCHAR pathW[MAX_PATH];
     HRESULT hr;
     WCHAR *filename;
-    BOOL selected;
     GUID guid;
-
-    static const WCHAR file_type[] = {'v','i','d','e','o','/','m','p','4',0};
 
     if (!pMFCreateSourceResolver)
     {
@@ -249,8 +370,7 @@ static void test_source_resolver(void)
 
     filename = load_resource(mp4file);
 
-    hr = MFCreateFile(MF_ACCESSMODE_READ, MF_OPENMODE_FAIL_IF_NOT_EXIST,
-                      MF_FILEFLAGS_NONE, filename, &bytestream);
+    hr = MFCreateFile(MF_ACCESSMODE_READ, MF_OPENMODE_FAIL_IF_NOT_EXIST, MF_FILEFLAGS_NONE, filename, &stream);
     ok(hr == S_OK, "got 0x%08x\n", hr);
 
     hr = IMFSourceResolver_CreateObjectFromByteStream(
@@ -258,45 +378,38 @@ static void test_source_resolver(void)
         &obj_type, (IUnknown **)&mediasource);
     ok(hr == E_POINTER, "got 0x%08x\n", hr);
 
-    hr = IMFSourceResolver_CreateObjectFromByteStream(
-        resolver, bytestream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
-        NULL, (IUnknown **)&mediasource);
+    hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
+            NULL, (IUnknown **)&mediasource);
     ok(hr == E_POINTER, "got 0x%08x\n", hr);
 
-    hr = IMFSourceResolver_CreateObjectFromByteStream(
-        resolver, bytestream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
-        &obj_type, NULL);
+    hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
+            &obj_type, NULL);
     ok(hr == E_POINTER, "got 0x%08x\n", hr);
 
-    hr = IMFSourceResolver_CreateObjectFromByteStream(
-        resolver, bytestream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
-        &obj_type, (IUnknown **)&mediasource);
+    hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
+            &obj_type, (IUnknown **)&mediasource);
     todo_wine ok(hr == MF_E_UNSUPPORTED_BYTESTREAM_TYPE, "got 0x%08x\n", hr);
     if (hr == S_OK) IMFMediaSource_Release(mediasource);
 
-    hr = IMFSourceResolver_CreateObjectFromByteStream(
-        resolver, bytestream, NULL, MF_RESOLUTION_BYTESTREAM, NULL,
-        &obj_type, (IUnknown **)&mediasource);
+    hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_BYTESTREAM, NULL,
+            &obj_type, (IUnknown **)&mediasource);
     todo_wine ok(hr == MF_E_UNSUPPORTED_BYTESTREAM_TYPE, "got 0x%08x\n", hr);
 
-    IMFByteStream_Release(bytestream);
+    IMFByteStream_Release(stream);
 
     /* We have to create a new bytestream here, because all following
      * calls to CreateObjectFromByteStream will fail. */
-    hr = MFCreateFile(MF_ACCESSMODE_READ, MF_OPENMODE_FAIL_IF_NOT_EXIST,
-                      MF_FILEFLAGS_NONE, filename, &bytestream);
+    hr = MFCreateFile(MF_ACCESSMODE_READ, MF_OPENMODE_FAIL_IF_NOT_EXIST, MF_FILEFLAGS_NONE, filename, &stream);
     ok(hr == S_OK, "got 0x%08x\n", hr);
 
-    hr = IUnknown_QueryInterface(bytestream, &IID_IMFAttributes,
-                                 (void **)&attributes);
+    hr = IMFByteStream_QueryInterface(stream, &IID_IMFAttributes, (void **)&attributes);
     ok(hr == S_OK, "got 0x%08x\n", hr);
     hr = IMFAttributes_SetString(attributes, &MF_BYTESTREAM_CONTENT_TYPE, file_type);
     ok(hr == S_OK, "Failed to set string value, hr %#x.\n", hr);
     IMFAttributes_Release(attributes);
 
-    hr = IMFSourceResolver_CreateObjectFromByteStream(
-        resolver, bytestream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
-        &obj_type, (IUnknown **)&mediasource);
+    hr = IMFSourceResolver_CreateObjectFromByteStream(resolver, stream, NULL, MF_RESOLUTION_MEDIASOURCE, NULL,
+            &obj_type, (IUnknown **)&mediasource);
     ok(hr == S_OK, "got 0x%08x\n", hr);
     ok(mediasource != NULL, "got %p\n", mediasource);
     ok(obj_type == MF_OBJECT_MEDIASOURCE, "got %d\n", obj_type);
@@ -320,14 +433,66 @@ todo_wine
 
     IMFPresentationDescriptor_Release(descriptor);
     IMFMediaSource_Release(mediasource);
-    IMFByteStream_Release(bytestream);
+    IMFByteStream_Release(stream);
+
+    /* Create from URL. */
+    callback.event = CreateEventA(NULL, FALSE, FALSE, NULL);
+
+    hr = IMFSourceResolver_CreateObjectFromURL(resolver, filename, MF_RESOLUTION_BYTESTREAM, NULL, &obj_type,
+            (IUnknown **)&stream);
+    ok(hr == S_OK, "Failed to resolve url, hr %#x.\n", hr);
+    IMFByteStream_Release(stream);
+
+    hr = IMFSourceResolver_BeginCreateObjectFromURL(resolver, filename, MF_RESOLUTION_BYTESTREAM, NULL,
+            &cancel_cookie, &callback.IMFAsyncCallback_iface, (IUnknown *)resolver);
+    ok(hr == S_OK, "Create request failed, hr %#x.\n", hr);
+    ok(cancel_cookie != NULL, "Unexpected cancel object.\n");
+    IUnknown_Release(cancel_cookie);
+
+    if (SUCCEEDED(hr))
+        WaitForSingleObject(callback.event, INFINITE);
+
+    /* With explicit scheme. */
+    lstrcpyW(pathW, fileschemeW);
+    lstrcatW(pathW, filename);
+
+    hr = IMFSourceResolver_CreateObjectFromURL(resolver, pathW, MF_RESOLUTION_BYTESTREAM, NULL, &obj_type,
+            (IUnknown **)&stream);
+    ok(hr == S_OK, "Failed to resolve url, hr %#x.\n", hr);
+    IMFByteStream_Release(stream);
 
     IMFSourceResolver_Release(resolver);
+
+    /* Create directly through scheme handler. */
+    hr = CoInitialize(NULL);
+    ok(SUCCEEDED(hr), "Failed to initialize, hr %#x.\n", hr);
+    do_uninit = hr == S_OK;
+
+    hr = CoCreateInstance(&CLSID_FileSchemeHandler, NULL, CLSCTX_INPROC_SERVER, &IID_IMFSchemeHandler,
+            (void **)&scheme_handler);
+    ok(hr == S_OK, "Failed to create handler object, hr %#x.\n", hr);
+
+    callback2.event = callback.event;
+    cancel_cookie = NULL;
+    hr = IMFSchemeHandler_BeginCreateObject(scheme_handler, pathW, MF_RESOLUTION_MEDIASOURCE, NULL, &cancel_cookie,
+            &callback2.IMFAsyncCallback_iface, (IUnknown *)scheme_handler);
+    ok(hr == S_OK, "Create request failed, hr %#x.\n", hr);
+    ok(!!cancel_cookie, "Unexpected cancel object.\n");
+    IUnknown_Release(cancel_cookie);
+
+    WaitForSingleObject(callback2.event, INFINITE);
+
+    IMFSchemeHandler_Release(scheme_handler);
+
+    if (do_uninit)
+        CoUninitialize();
 
     hr = MFShutdown();
     ok(hr == S_OK, "Failed to shut down, hr %#x.\n", hr);
 
     DeleteFileW(filename);
+
+    CloseHandle(callback.event);
 }
 
 static void init_functions(void)
@@ -1131,10 +1296,10 @@ static void test_MFCreateMFByteStreamOnStream(void)
 
 static void test_file_stream(void)
 {
-    IMFByteStream *bytestream;
-    IMFByteStream *bytestream2;
+    IMFByteStream *bytestream, *bytestream2;
     IMFAttributes *attributes = NULL;
     MF_ATTRIBUTE_TYPE item_type;
+    WCHAR pathW[MAX_PATH];
     DWORD caps, count;
     WCHAR *filename;
     IUnknown *unk;
@@ -1244,6 +1409,12 @@ static void test_file_stream(void)
     ok(hr == HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION), "Unexpected hr %#x.\n", hr);
 
     IMFByteStream_Release(bytestream);
+
+    /* Explicit file: scheme */
+    lstrcpyW(pathW, fileschemeW);
+    lstrcatW(pathW, filename);
+    hr = MFCreateFile(MF_ACCESSMODE_READ, MF_OPENMODE_FAIL_IF_NOT_EXIST, MF_FILEFLAGS_NONE, pathW, &bytestream);
+    ok(FAILED(hr), "Unexpected hr %#x.\n", hr);
 
     hr = MFShutdown();
     ok(hr == S_OK, "Failed to shut down, hr %#x.\n", hr);
@@ -1475,47 +1646,53 @@ static void test_sample(void)
 
     IMFAttributes_Release(attributes);
     IMFSample_Release(sample);
-}
 
-struct test_callback
-{
-    IMFAsyncCallback IMFAsyncCallback_iface;
-    HANDLE event;
-};
+    /* ConvertToContiguousBuffer() */
+    hr = MFCreateSample(&sample);
+    ok(hr == S_OK, "Failed to create a sample, hr %#x.\n", hr);
 
-static struct test_callback *impl_from_IMFAsyncCallback(IMFAsyncCallback *iface)
-{
-    return CONTAINING_RECORD(iface, struct test_callback, IMFAsyncCallback_iface);
-}
+    hr = IMFSample_ConvertToContiguousBuffer(sample, &buffer);
+    ok(hr == E_UNEXPECTED, "Unexpected hr %#x.\n", hr);
 
-static HRESULT WINAPI testcallback_QueryInterface(IMFAsyncCallback *iface, REFIID riid, void **obj)
-{
-    if (IsEqualIID(riid, &IID_IMFAsyncCallback) ||
-            IsEqualIID(riid, &IID_IUnknown))
-    {
-        *obj = iface;
-        IMFAsyncCallback_AddRef(iface);
-        return S_OK;
-    }
+    hr = MFCreateMemoryBuffer(16, &buffer);
+    ok(hr == S_OK, "Failed to create a buffer, hr %#x.\n", hr);
 
-    *obj = NULL;
-    return E_NOINTERFACE;
-}
+    hr = IMFSample_AddBuffer(sample, buffer);
+    ok(hr == S_OK, "Failed to add buffer, hr %#x.\n", hr);
 
-static ULONG WINAPI testcallback_AddRef(IMFAsyncCallback *iface)
-{
-    return 2;
-}
+    hr = IMFSample_ConvertToContiguousBuffer(sample, &buffer2);
+    ok(hr == S_OK, "Failed to convert, hr %#x.\n", hr);
+    ok(buffer2 == buffer, "Unexpected buffer instance.\n");
+    IMFMediaBuffer_Release(buffer2);
 
-static ULONG WINAPI testcallback_Release(IMFAsyncCallback *iface)
-{
-    return 1;
-}
+    hr = IMFSample_ConvertToContiguousBuffer(sample, &buffer2);
+    ok(hr == S_OK, "Failed to convert, hr %#x.\n", hr);
+    ok(buffer2 == buffer, "Unexpected buffer instance.\n");
+    IMFMediaBuffer_Release(buffer2);
 
-static HRESULT WINAPI testcallback_GetParameters(IMFAsyncCallback *iface, DWORD *flags, DWORD *queue)
-{
-    ok(flags != NULL && queue != NULL, "Unexpected arguments.\n");
-    return E_NOTIMPL;
+    hr = MFCreateMemoryBuffer(16, &buffer2);
+    ok(hr == S_OK, "Failed to create a buffer, hr %#x.\n", hr);
+
+    hr = IMFSample_AddBuffer(sample, buffer2);
+    ok(hr == S_OK, "Failed to add buffer, hr %#x.\n", hr);
+    IMFMediaBuffer_Release(buffer2);
+
+    hr = IMFSample_GetBufferCount(sample, &count);
+    ok(hr == S_OK, "Failed to get buffer count, hr %#x.\n", hr);
+    ok(count == 2, "Unexpected buffer count %u.\n", count);
+
+    hr = IMFSample_ConvertToContiguousBuffer(sample, &buffer2);
+todo_wine
+    ok(hr == S_OK, "Failed to convert, hr %#x.\n", hr);
+    if (SUCCEEDED(hr))
+        IMFMediaBuffer_Release(buffer2);
+
+    hr = IMFSample_GetBufferCount(sample, &count);
+    ok(hr == S_OK, "Failed to get buffer count, hr %#x.\n", hr);
+todo_wine
+    ok(count == 1, "Unexpected buffer count %u.\n", count);
+
+    IMFSample_Release(sample);
 }
 
 static HRESULT WINAPI testcallback_Invoke(IMFAsyncCallback *iface, IMFAsyncResult *result)
@@ -2242,6 +2419,7 @@ static void test_presentation_descriptor(void)
     IMFMediaType *media_type;
     unsigned int i;
     BOOL selected;
+    UINT64 value;
     DWORD count;
     HRESULT hr;
 
@@ -2283,14 +2461,24 @@ static void test_presentation_descriptor(void)
     ok(!!selected, "Unexpected selected state.\n");
     IMFStreamDescriptor_Release(stream_desc2);
 
+    hr = IMFPresentationDescriptor_SetUINT64(pd, &MF_PD_TOTAL_FILE_SIZE, 1);
+    ok(hr == S_OK, "Failed to set attribute, hr %#x.\n", hr);
+
     hr = IMFPresentationDescriptor_Clone(pd, &pd2);
     ok(hr == S_OK, "Failed to clone, hr %#x.\n", hr);
 
     hr = IMFPresentationDescriptor_GetStreamDescriptorByIndex(pd2, 0, &selected, &stream_desc2);
     ok(hr == S_OK, "Failed to get stream descriptor, hr %#x.\n", hr);
     ok(!!selected, "Unexpected selected state.\n");
+    ok(stream_desc2 == stream_desc[0], "Unexpected stream descriptor.\n");
     IMFStreamDescriptor_Release(stream_desc2);
 
+    value = 0;
+    hr = IMFPresentationDescriptor_GetUINT64(pd2, &MF_PD_TOTAL_FILE_SIZE, &value);
+    ok(hr == S_OK, "Failed to get attribute, hr %#x.\n", hr);
+    ok(value == 1, "Unexpected attribute value.\n");
+
+    IMFPresentationDescriptor_Release(pd2);
     IMFPresentationDescriptor_Release(pd);
 
     for (i = 0; i < ARRAY_SIZE(stream_desc); ++i)
@@ -2828,6 +3016,72 @@ static void test_MFCreateWaveFormatExFromMFMediaType(void)
     IMFMediaType_Release(mediatype);
 }
 
+static HRESULT WINAPI test_create_file_callback_Invoke(IMFAsyncCallback *iface, IMFAsyncResult *result)
+{
+    struct test_callback *callback = impl_from_IMFAsyncCallback(iface);
+    IMFByteStream *stream;
+    IUnknown *object;
+    HRESULT hr;
+
+    ok(!!result, "Unexpected result object.\n");
+
+    ok((IUnknown *)iface == IMFAsyncResult_GetStateNoAddRef(result), "Unexpected result state.\n");
+
+    hr = IMFAsyncResult_GetObject(result, &object);
+    ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
+
+    hr = MFEndCreateFile(result, &stream);
+    ok(hr == S_OK, "Failed to get file stream, hr %#x.\n", hr);
+    IMFByteStream_Release(stream);
+
+    SetEvent(callback->event);
+
+    return S_OK;
+}
+
+static const IMFAsyncCallbackVtbl test_create_file_callback_vtbl =
+{
+    testcallback_QueryInterface,
+    testcallback_AddRef,
+    testcallback_Release,
+    testcallback_GetParameters,
+    test_create_file_callback_Invoke,
+};
+
+static void test_async_create_file(void)
+{
+    struct test_callback callback = { { &test_create_file_callback_vtbl } };
+    WCHAR pathW[MAX_PATH], fileW[MAX_PATH];
+    IUnknown *cancel_cookie;
+    HRESULT hr;
+    BOOL ret;
+
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    ok(hr == S_OK, "Fail to start up, hr %#x.\n", hr);
+
+    callback.event = CreateEventA(NULL, FALSE, FALSE, NULL);
+
+    GetTempPathW(ARRAY_SIZE(pathW), pathW);
+    GetTempFileNameW(pathW, NULL, 0, fileW);
+
+    hr = MFBeginCreateFile(MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, fileW,
+            &callback.IMFAsyncCallback_iface, (IUnknown *)&callback.IMFAsyncCallback_iface, &cancel_cookie);
+    ok(hr == S_OK, "Async create request failed, hr %#x.\n", hr);
+    ok(cancel_cookie != NULL, "Unexpected cancellation object.\n");
+
+    WaitForSingleObject(callback.event, INFINITE);
+
+    IUnknown_Release(cancel_cookie);
+
+    CloseHandle(callback.event);
+
+    hr = MFShutdown();
+    ok(hr == S_OK, "Failed to shut down, hr %#x.\n", hr);
+
+    ret = DeleteFileW(fileW);
+    ok(ret, "Failed to delete test file.\n");
+}
+
 START_TEST(mfplat)
 {
     CoInitialize(NULL);
@@ -2862,6 +3116,7 @@ START_TEST(mfplat)
     test_attributes_serialization();
     test_wrapped_media_type();
     test_MFCreateWaveFormatExFromMFMediaType();
+    test_async_create_file();
 
     CoUninitialize();
 }

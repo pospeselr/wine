@@ -687,7 +687,7 @@ static struct wined3d_texture *surface_convert_format(struct wined3d_texture *sr
         TRACE("Using upload conversion.\n");
 
         wined3d_texture_prepare_texture(dst_texture, context, FALSE);
-        wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(dst_texture), context, FALSE);
+        wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(dst_texture), wined3d_context_gl(context), FALSE);
         wined3d_texture_upload_data(dst_texture, 0, context, src_format, &src_box,
                 wined3d_const_bo_address(&src_data), src_row_pitch, src_slice_pitch, 0, 0, 0, FALSE);
 
@@ -737,7 +737,7 @@ static void texture2d_read_from_framebuffer(struct wined3d_texture *texture, uns
     }
     else
     {
-        context_apply_blit_state(context, device);
+        wined3d_context_gl_apply_blit_state(wined3d_context_gl(context), device);
     }
 
     /* Select the correct read buffer, and give some debug output.
@@ -858,7 +858,7 @@ void texture2d_load_fb_texture(struct wined3d_texture_gl *texture_gl,
     device_invalidate_state(device, STATE_FRAMEBUFFER);
 
     wined3d_texture_prepare_texture(&texture_gl->t, context, srgb);
-    wined3d_texture_gl_bind_and_dirtify(texture_gl, context, srgb);
+    wined3d_texture_gl_bind_and_dirtify(texture_gl, wined3d_context_gl(context), srgb);
 
     TRACE("Reading back offscreen render target %p, %u.\n", texture_gl, sub_resource_idx);
 
@@ -888,6 +888,7 @@ static void fb_copy_to_texture_direct(struct wined3d_texture_gl *dst_texture, un
     struct wined3d_device *device = dst_texture->t.resource.device;
     unsigned int src_height, src_level, dst_level;
     const struct wined3d_gl_info *gl_info;
+    struct wined3d_context_gl *context_gl;
     float xrel, yrel;
     struct wined3d_context *context;
     BOOL upsidedown = FALSE;
@@ -905,12 +906,13 @@ static void fb_copy_to_texture_direct(struct wined3d_texture_gl *dst_texture, un
     }
 
     context = context_acquire(device, &src_texture->t, src_sub_resource_idx);
+    context_gl = wined3d_context_gl(context);
     gl_info = context->gl_info;
-    context_apply_blit_state(context, device);
+    wined3d_context_gl_apply_blit_state(context_gl, device);
     wined3d_texture_load(&dst_texture->t, context, FALSE);
 
     /* Bind the target texture */
-    context_bind_texture(context, dst_texture->target, dst_texture->texture_rgb.name);
+    wined3d_context_gl_bind_texture(context_gl, dst_texture->target, dst_texture->texture_rgb.name);
     if (wined3d_resource_is_offscreen(&src_texture->t.resource))
     {
         TRACE("Reading from an offscreen target\n");
@@ -1008,6 +1010,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
     GLuint src, backup = 0;
     float left, right, top, bottom; /* Texture coordinates */
     const struct wined3d_gl_info *gl_info;
+    struct wined3d_context_gl *context_gl;
     struct wined3d_context *context;
     GLenum drawBuffer = GL_BACK;
     GLenum offscreen_buffer;
@@ -1023,8 +1026,9 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
 
     /* Activate the Proper context for reading from the source surface, set it up for blitting */
     context = context_acquire(device, &src_texture->t, src_sub_resource_idx);
+    context_gl = wined3d_context_gl(context);
     gl_info = context->gl_info;
-    context_apply_ffp_blit_state(context, device);
+    wined3d_context_gl_apply_ffp_blit_state(context_gl, device);
     wined3d_texture_load(&dst_texture->t, context, FALSE);
 
     offscreen_buffer = context_get_offscreen_gl_buffer(context);
@@ -1060,7 +1064,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
     {
         gl_info->gl_ops.gl.p_glGenTextures(1, &backup);
         checkGLcall("glGenTextures");
-        context_bind_texture(context, GL_TEXTURE_2D, backup);
+        wined3d_context_gl_bind_texture(context_gl, GL_TEXTURE_2D, backup);
         texture_target = GL_TEXTURE_2D;
     }
     else
@@ -1069,7 +1073,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
          * we are reading from the back buffer, the backup can be used as source texture
          */
         texture_target = src_target;
-        context_bind_texture(context, texture_target, src_texture->texture_rgb.name);
+        wined3d_context_gl_bind_texture(context_gl, texture_target, src_texture->texture_rgb.name);
         gl_info->gl_ops.gl.p_glEnable(texture_target);
         checkGLcall("glEnable(texture_target)");
 
@@ -1121,7 +1125,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
 
         gl_info->gl_ops.gl.p_glGenTextures(1, &src);
         checkGLcall("glGenTextures(1, &src)");
-        context_bind_texture(context, GL_TEXTURE_2D, src);
+        wined3d_context_gl_bind_texture(context_gl, GL_TEXTURE_2D, src);
 
         /* TODO: Only copy the part that will be read. Use src_rect->left,
          * src_rect->bottom as origin, but with the width watch out for power
@@ -1204,7 +1208,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
     }
 
     /* Now read the stretched and upside down image into the destination texture */
-    context_bind_texture(context, texture_target, dst_texture->texture_rgb.name);
+    wined3d_context_gl_bind_texture(context_gl, texture_target, dst_texture->texture_rgb.name);
     gl_info->gl_ops.gl.p_glCopyTexSubImage2D(texture_target,
                         0,
                         dst_rect.left, dst_rect.top, /* xoffset, yoffset */
@@ -1223,7 +1227,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
                 gl_info->gl_ops.gl.p_glEnable(GL_TEXTURE_2D);
                 texture_target = GL_TEXTURE_2D;
             }
-            context_bind_texture(context, GL_TEXTURE_2D, backup);
+            wined3d_context_gl_bind_texture(context_gl, GL_TEXTURE_2D, backup);
         }
         else
         {
@@ -1233,7 +1237,7 @@ static void fb_copy_to_texture_hwstretch(struct wined3d_texture_gl *dst_texture,
                 gl_info->gl_ops.gl.p_glEnable(src_target);
                 texture_target = src_target;
             }
-            context_bind_texture(context, src_target, src_texture->texture_rgb.name);
+            wined3d_context_gl_bind_texture(context_gl, src_target, src_texture->texture_rgb.name);
         }
 
         gl_info->gl_ops.gl.p_glBegin(GL_QUADS);
@@ -1441,7 +1445,7 @@ BOOL texture2d_load_sysmem(struct wined3d_texture *texture, unsigned int sub_res
     if (sub_resource->locations & (WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB))
     {
         struct wined3d_bo_address data;
-        wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(texture), context,
+        wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(texture), wined3d_context_gl(context),
                 !(sub_resource->locations & WINED3D_LOCATION_TEXTURE_RGB));
         wined3d_texture_get_memory(texture, sub_resource_idx, &data, dst_location);
         wined3d_texture_download_data(texture, sub_resource_idx, context, &data);
@@ -1608,7 +1612,7 @@ BOOL texture2d_load_texture(struct wined3d_texture *texture, unsigned int sub_re
     }
 
     wined3d_texture_prepare_texture(texture, context, srgb);
-    wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(texture), context, srgb);
+    wined3d_texture_gl_bind_and_dirtify(wined3d_texture_gl(texture), wined3d_context_gl(context), srgb);
     wined3d_texture_get_pitch(texture, level, &src_row_pitch, &src_slice_pitch);
 
     format = texture->resource.format;
@@ -2224,7 +2228,7 @@ static DWORD ffp_blitter_blit(struct wined3d_blitter *blitter, enum wined3d_blit
         wined3d_texture_load(src_texture, context, FALSE);
     }
 
-    context_apply_ffp_blit_state(context, device);
+    wined3d_context_gl_apply_ffp_blit_state(wined3d_context_gl(context), device);
 
     if (dst_location == WINED3D_LOCATION_DRAWABLE)
     {

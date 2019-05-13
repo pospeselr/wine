@@ -2685,6 +2685,36 @@ static void EDIT_EM_SetLimitText(EDITSTATE *es, UINT limit)
     es->buffer_limit = limit;
 }
 
+static BOOL is_cjk(HDC dc)
+{
+    const DWORD FS_DBCS_MASK = FS_JISJAPAN|FS_CHINESESIMP|FS_WANSUNG|FS_CHINESETRAD|FS_JOHAB;
+    FONTSIGNATURE fs;
+
+    switch (GdiGetCodePage(dc)) {
+    case 932: case 936: case 949: case 950: case 1361:
+        return TRUE;
+    default:
+        return (GetTextCharsetInfo(dc, &fs, 0) != DEFAULT_CHARSET &&
+                (fs.fsCsb[0] & FS_DBCS_MASK));
+    }
+}
+
+static int get_cjk_fontinfo_margin(int width, int side_bearing)
+{
+    int margin;
+    if (side_bearing < 0)
+        margin = min(-side_bearing, width/2);
+    else
+        margin = 0;
+    return margin;
+}
+
+struct char_width_info {
+    INT min_lsb, min_rsb, unknown;
+};
+
+/* Undocumented gdi32 export */
+extern BOOL WINAPI GetCharWidthInfo(HDC, struct char_width_info *);
 
 /*********************************************************************
  *
@@ -2694,26 +2724,10 @@ static void EDIT_EM_SetLimitText(EDITSTATE *es, UINT limit)
  * action wParam despite what the docs say. EC_USEFONTINFO calculates the
  * margin according to the textmetrics of the current font.
  *
- * When EC_USEFONTINFO is used in the non_cjk case the margins only
- * change if the edit control is equal to or larger than a certain
- * size.  Though there is an exception for the empty client rect case
- * with small font sizes.
+ * When EC_USEFONTINFO is used, the margins only change if the edit control is
+ * equal to or larger than a certain size. The empty client rect is treated as
+ * 80 pixels width.
  */
-static BOOL is_cjk(UINT charset)
-{
-    switch(charset)
-    {
-    case SHIFTJIS_CHARSET:
-    case HANGUL_CHARSET:
-    case GB2312_CHARSET:
-    case CHINESEBIG5_CHARSET:
-        return TRUE;
-    }
-    /* HANGUL_CHARSET is strange, though treated as CJK by Win 8, it is
-     * not by other versions including Win 10. */
-    return FALSE;
-}
-
 static void EDIT_EM_SetMargins(EDITSTATE *es, INT action,
 			       WORD left, WORD right, BOOL repaint)
 {
@@ -2725,25 +2739,29 @@ static void EDIT_EM_SetMargins(EDITSTATE *es, INT action,
         if (es->font && (left == EC_USEFONTINFO || right == EC_USEFONTINFO)) {
             HDC dc = GetDC(es->hwndSelf);
             HFONT old_font = SelectObject(dc, es->font);
-            LONG width = GdiGetCharDimensions(dc, &tm, NULL);
+            LONG width = GdiGetCharDimensions(dc, &tm, NULL), rc_width;
             RECT rc;
 
             /* The default margins are only non zero for TrueType or Vector fonts */
             if (tm.tmPitchAndFamily & ( TMPF_VECTOR | TMPF_TRUETYPE )) {
-                if (!is_cjk(tm.tmCharSet)) {
-                    default_left_margin = width / 2;
-                    default_right_margin = width / 2;
+                struct char_width_info width_info;
 
-                    GetClientRect(es->hwndSelf, &rc);
-                    if (rc.right - rc.left < (width / 2 + width) * 2 &&
-                        (width >= 28 || !IsRectEmpty(&rc)) ) {
-                        default_left_margin = es->left_margin;
-                        default_right_margin = es->right_margin;
-                    }
-                } else {
-                    /* FIXME: figure out the CJK values. They are not affected by the client rect. */
+                if (is_cjk(dc) && GetCharWidthInfo(dc, &width_info))
+                {
+                    default_left_margin = get_cjk_fontinfo_margin(width, width_info.min_lsb);
+                    default_right_margin = get_cjk_fontinfo_margin(width, width_info.min_rsb);
+                }
+                else
+                {
                     default_left_margin = width / 2;
                     default_right_margin = width / 2;
+                }
+
+                GetClientRect(es->hwndSelf, &rc);
+                rc_width = !IsRectEmpty(&rc) ? rc.right - rc.left : 80;
+                if (rc_width < default_left_margin + default_right_margin + width * 2) {
+                    default_left_margin = es->left_margin;
+                    default_right_margin = es->right_margin;
                 }
             }
             SelectObject(dc, old_font);
@@ -3690,6 +3708,29 @@ static void EDIT_WM_SetFocus(HTHEME theme, EDITSTATE *es)
 }
 
 
+static DWORD get_font_margins(HDC hdc, const TEXTMETRICW *tm)
+{
+	ABC abc[256];
+	SHORT left, right;
+	UINT i;
+
+	if (!(tm->tmPitchAndFamily & (TMPF_VECTOR | TMPF_TRUETYPE)))
+		return MAKELONG(EC_USEFONTINFO, EC_USEFONTINFO);
+
+	if (!is_cjk(hdc))
+		return MAKELONG(EC_USEFONTINFO, EC_USEFONTINFO);
+
+	if (!GetCharABCWidthsW(hdc, 0, 255, abc))
+		return 0;
+
+	left = right = 0;
+	for (i = 0; i < ARRAY_SIZE(abc); i++) {
+		if (-abc[i].abcA > right) right = -abc[i].abcA;
+		if (-abc[i].abcC > left ) left  = -abc[i].abcC;
+	}
+	return MAKELONG(left, right);
+}
+
 /*********************************************************************
  *
  *	WM_SETFONT
@@ -3705,6 +3746,7 @@ static void EDIT_WM_SetFont(EDITSTATE *es, HFONT font, BOOL redraw)
 	HDC dc;
 	HFONT old_font = 0;
 	RECT clientRect;
+	DWORD margins;
 
 	es->font = font;
 	EDIT_InvalidateUniscribeData(es);
@@ -3714,6 +3756,7 @@ static void EDIT_WM_SetFont(EDITSTATE *es, HFONT font, BOOL redraw)
 	GetTextMetricsW(dc, &tm);
 	es->line_height = tm.tmHeight;
 	es->char_width = tm.tmAveCharWidth;
+	margins = get_font_margins(dc, &tm);
 	if (font)
 		SelectObject(dc, old_font);
 	ReleaseDC(es->hwndSelf, dc);
@@ -3721,8 +3764,9 @@ static void EDIT_WM_SetFont(EDITSTATE *es, HFONT font, BOOL redraw)
 	/* Reset the format rect and the margins */
 	GetClientRect(es->hwndSelf, &clientRect);
 	EDIT_SetRectNP(es, &clientRect);
-	EDIT_EM_SetMargins(es, EC_LEFTMARGIN | EC_RIGHTMARGIN,
-			   EC_USEFONTINFO, EC_USEFONTINFO, FALSE);
+	if (margins)
+		EDIT_EM_SetMargins(es, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+				   LOWORD(margins), HIWORD(margins), FALSE);
 
 	if (es->style & ES_MULTILINE)
 		EDIT_BuildLineDefs_ML(es, 0, get_text_length(es), 0, NULL);

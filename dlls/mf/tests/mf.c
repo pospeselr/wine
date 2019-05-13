@@ -27,21 +27,71 @@
 #include "winbase.h"
 
 #include "initguid.h"
+#include "ole2.h"
+
+DEFINE_GUID(GUID_NULL,0,0,0,0,0,0,0,0,0,0,0);
+
+#undef INITGUID
+#include <guiddef.h>
 #include "mfapi.h"
 #include "mferror.h"
 #include "mfidl.h"
 
 #include "wine/test.h"
 
-DEFINE_GUID(GUID_NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+#define EXPECT_REF(obj,ref) _expect_ref((IUnknown*)obj, ref, __LINE__)
+static void _expect_ref(IUnknown* obj, ULONG expected_refcount, int line)
+{
+    ULONG refcount;
+    IUnknown_AddRef(obj);
+    refcount = IUnknown_Release(obj);
+    ok_(__FILE__, line)(refcount == expected_refcount, "Unexpected refcount %d, expected %d.\n", refcount,
+            expected_refcount);
+}
+
+static HRESULT WINAPI test_unk_QueryInterface(IUnknown *iface, REFIID riid, void **obj)
+{
+    if (IsEqualIID(riid, &IID_IUnknown))
+    {
+        *obj = iface;
+        IUnknown_AddRef(iface);
+        return S_OK;
+    }
+
+    *obj = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI test_unk_AddRef(IUnknown *iface)
+{
+    return 2;
+}
+
+static ULONG WINAPI test_unk_Release(IUnknown *iface)
+{
+    return 1;
+}
+
+static const IUnknownVtbl test_unk_vtbl =
+{
+    test_unk_QueryInterface,
+    test_unk_AddRef,
+    test_unk_Release,
+};
 
 static void test_topology(void)
 {
     IMFCollection *collection, *collection2;
+    IUnknown test_unk2 = { &test_unk_vtbl };
+    IUnknown test_unk = { &test_unk_vtbl };
     IMFTopologyNode *node, *node2, *node3;
+    IMFMediaType *mediatype, *mediatype2;
     IMFTopology *topology, *topology2;
+    MF_TOPOLOGY_TYPE node_type;
+    UINT32 count, index;
+    IUnknown *object;
+    WORD node_count;
     DWORD size;
-    WORD count;
     HRESULT hr;
     TOPOID id;
 
@@ -92,19 +142,19 @@ static void test_topology(void)
     hr = IMFTopology_AddNode(topology, NULL);
     ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
 
-    count = 1;
-    hr = IMFTopology_GetNodeCount(topology, &count);
+    node_count = 1;
+    hr = IMFTopology_GetNodeCount(topology, &node_count);
     ok(hr == S_OK, "Failed to get node count, hr %#x.\n", hr);
-    ok(count == 0, "Unexpected node count %u.\n", count);
+    ok(node_count == 0, "Unexpected node count %u.\n", node_count);
 
     /* Same id, different nodes. */
     hr = IMFTopology_AddNode(topology, node);
     ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
 
-    count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &count);
+    node_count = 0;
+    hr = IMFTopology_GetNodeCount(topology, &node_count);
     ok(hr == S_OK, "Failed to get node count, hr %#x.\n", hr);
-    ok(count == 1, "Unexpected node count %u.\n", count);
+    ok(node_count == 1, "Unexpected node count %u.\n", node_count);
 
     hr = IMFTopology_AddNode(topology, node2);
     ok(hr == E_INVALIDARG, "Unexpected hr %#x.\n", hr);
@@ -150,10 +200,10 @@ static void test_topology(void)
     ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
     IMFTopologyNode_Release(node2);
 
-    count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &count);
+    node_count = 0;
+    hr = IMFTopology_GetNodeCount(topology, &node_count);
     ok(hr == S_OK, "Failed to get node count, hr %#x.\n", hr);
-    ok(count == 2, "Unexpected node count %u.\n", count);
+    ok(node_count == 2, "Unexpected node count %u.\n", node_count);
 
     /* Remove with detached node, existing id. */
     hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node2);
@@ -167,18 +217,18 @@ static void test_topology(void)
     hr = IMFTopology_RemoveNode(topology, node);
     ok(hr == S_OK, "Failed to remove a node, hr %#x.\n", hr);
 
-    count = 0;
-    hr = IMFTopology_GetNodeCount(topology, &count);
+    node_count = 0;
+    hr = IMFTopology_GetNodeCount(topology, &node_count);
     ok(hr == S_OK, "Failed to get node count, hr %#x.\n", hr);
-    ok(count == 1, "Unexpected node count %u.\n", count);
+    ok(node_count == 1, "Unexpected node count %u.\n", node_count);
 
     hr = IMFTopology_Clear(topology);
     ok(hr == S_OK, "Failed to clear topology, hr %#x.\n", hr);
 
-    count = 1;
-    hr = IMFTopology_GetNodeCount(topology, &count);
+    node_count = 1;
+    hr = IMFTopology_GetNodeCount(topology, &node_count);
     ok(hr == S_OK, "Failed to get node count, hr %#x.\n", hr);
-    ok(count == 0, "Unexpected node count %u.\n", count);
+    ok(node_count == 0, "Unexpected node count %u.\n", node_count);
 
     hr = IMFTopology_Clear(topology);
     ok(hr == S_OK, "Failed to clear topology, hr %#x.\n", hr);
@@ -302,7 +352,170 @@ static void test_topology(void)
     ok(hr == S_OK, "Failed to create a node, hr %#x.\n", hr);
     hr = IMFTopology_AddNode(topology, node);
     ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    /* Associated object. */
+    hr = IMFTopologyNode_SetObject(node, NULL);
+    ok(hr == S_OK, "Failed to set object, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetObject(node, NULL);
+    ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
+
+    object = (void *)0xdeadbeef;
+    hr = IMFTopologyNode_GetObject(node, &object);
+    ok(hr == E_FAIL, "Unexpected hr %#x.\n", hr);
+    ok(!object, "Unexpected object %p.\n", object);
+
+    hr = IMFTopologyNode_SetObject(node, &test_unk);
+    ok(hr == S_OK, "Failed to set object, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetObject(node, &object);
+    ok(hr == S_OK, "Failed to get object, hr %#x.\n", hr);
+    ok(object == &test_unk, "Unexpected object %p.\n", object);
+    IUnknown_Release(object);
+
+    hr = IMFTopologyNode_SetObject(node, &test_unk2);
+    ok(hr == S_OK, "Failed to set object, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetCount(node, &count);
+    ok(hr == S_OK, "Failed to get attribute count, hr %#x.\n", hr);
+    ok(count == 0, "Unexpected attribute count %u.\n", count);
+
+    hr = IMFTopologyNode_SetGUID(node, &MF_TOPONODE_TRANSFORM_OBJECTID, &MF_TOPONODE_TRANSFORM_OBJECTID);
+    ok(hr == S_OK, "Failed to set attribute, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetObject(node, NULL);
+    ok(hr == S_OK, "Failed to set object, hr %#x.\n", hr);
+
+    object = (void *)0xdeadbeef;
+    hr = IMFTopologyNode_GetObject(node, &object);
+    ok(hr == E_FAIL, "Unexpected hr %#x.\n", hr);
+    ok(!object, "Unexpected object %p.\n", object);
+
+    hr = IMFTopologyNode_GetCount(node, &count);
+    ok(hr == S_OK, "Failed to get attribute count, hr %#x.\n", hr);
+    ok(count == 1, "Unexpected attribute count %u.\n", count);
+
+    /* Preferred stream types. */
+    hr = IMFTopologyNode_GetInputCount(node, &count);
+    ok(hr == S_OK, "Failed to get input count, hr %#x.\n", hr);
+    ok(count == 0, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype);
+    ok(hr == E_INVALIDARG, "Unexpected hr %#x.\n", hr);
+
+    hr = MFCreateMediaType(&mediatype);
+    ok(hr == S_OK, "Failed to create media type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
+    ok(hr == S_OK, "Failed to get preferred type, hr %#x.\n", hr);
+    ok(mediatype2 == mediatype, "Unexpected mediatype instance.\n");
+    IMFMediaType_Release(mediatype2);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 0, NULL);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
+    ok(hr == E_FAIL, "Unexpected hr %#x.\n", hr);
+    ok(!mediatype2, "Unexpected mediatype instance.\n");
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputCount(node, &count);
+    ok(hr == S_OK, "Failed to get input count, hr %#x.\n", hr);
+    ok(count == 2, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_GetOutputCount(node, &count);
+    ok(hr == S_OK, "Failed to get input count, hr %#x.\n", hr);
+    ok(count == 0, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_SetOutputPrefType(node, 0, mediatype);
+    ok(hr == E_NOTIMPL, "Unexpected hr %#x.\n", hr);
+
     IMFTopologyNode_Release(node);
+
+    /* Source node. */
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
+    ok(hr == S_OK, "Failed to create a node, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
+    ok(hr == E_NOTIMPL, "Unexpected hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetOutputPrefType(node, 2, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetOutputPrefType(node, 0, &mediatype2);
+    ok(hr == E_FAIL, "Failed to get preferred type, hr %#x.\n", hr);
+    ok(!mediatype2, "Unexpected mediatype instance.\n");
+
+    hr = IMFTopologyNode_GetOutputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 3, "Unexpected count %u.\n", count);
+
+    IMFTopologyNode_Release(node);
+
+    /* Tee node. */
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_TEE_NODE, &node);
+    ok(hr == S_OK, "Failed to create a node, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 0, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputPrefType(node, 0, &mediatype2);
+    ok(hr == S_OK, "Failed to get preferred type, hr %#x.\n", hr);
+    ok(mediatype2 == mediatype, "Unexpected mediatype instance.\n");
+    IMFMediaType_Release(mediatype2);
+
+    hr = IMFTopologyNode_GetInputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 0, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 1, mediatype);
+    ok(hr == MF_E_INVALIDTYPE, "Unexpected hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 3, mediatype);
+    ok(hr == MF_E_INVALIDTYPE, "Unexpected hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetOutputPrefType(node, 4, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 0, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_GetOutputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 5, "Unexpected count %u.\n", count);
+
+    IMFTopologyNode_Release(node);
+
+    /* Transform node. */
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_TRANSFORM_NODE, &node);
+    ok(hr == S_OK, "Failed to create a node, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetInputPrefType(node, 3, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_SetOutputPrefType(node, 4, mediatype);
+    ok(hr == S_OK, "Failed to set preferred type, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_GetInputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 4, "Unexpected count %u.\n", count);
+
+    hr = IMFTopologyNode_GetOutputCount(node, &count);
+    ok(hr == S_OK, "Failed to get output count, hr %#x.\n", hr);
+    ok(count == 5, "Unexpected count %u.\n", count);
+
+    IMFTopologyNode_Release(node);
+
+    IMFMediaType_Release(mediatype);
 
     hr = IMFTopology_GetOutputNodeCollection(topology, &collection);
     ok(hr == S_OK || broken(hr == E_FAIL) /* before Win8 */, "Failed to get output node collection, hr %#x.\n", hr);
@@ -314,6 +527,104 @@ static void test_topology(void)
         ok(size == 1, "Unexpected item count.\n");
         IMFCollection_Release(collection);
     }
+
+    IMFTopology_Release(topology);
+
+    /* Connect nodes. */
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
+    ok(hr == S_OK, "Failed to create topology node, hr %#x.\n", hr);
+
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
+    ok(hr == S_OK, "Failed to create topology node, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 1);
+    EXPECT_REF(node2, 1);
+
+    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
+    ok(hr == S_OK, "Failed to connect nodes, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 2);
+    EXPECT_REF(node2, 2);
+
+    IMFTopologyNode_Release(node);
+
+    EXPECT_REF(node, 1);
+    EXPECT_REF(node2, 2);
+
+    IMFTopologyNode_Release(node2);
+
+    EXPECT_REF(node, 1);
+    EXPECT_REF(node2, 1);
+
+    hr = IMFTopologyNode_GetNodeType(node2, &node_type);
+    ok(hr == S_OK, "Failed to get node type, hr %#x.\n", hr);
+
+    IMFTopologyNode_Release(node);
+
+    /* Connect within topology. */
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_SOURCESTREAM_NODE, &node);
+    ok(hr == S_OK, "Failed to create topology node, hr %#x.\n", hr);
+
+    hr = MFCreateTopologyNode(MF_TOPOLOGY_OUTPUT_NODE, &node2);
+    ok(hr == S_OK, "Failed to create topology node, hr %#x.\n", hr);
+
+    hr = MFCreateTopology(&topology);
+    ok(hr == S_OK, "Failed to create topology, hr %#x.\n", hr);
+
+    hr = IMFTopology_AddNode(topology, node);
+    ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    hr = IMFTopology_AddNode(topology, node2);
+    ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 2);
+    EXPECT_REF(node2, 2);
+
+    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
+    ok(hr == S_OK, "Failed to connect nodes, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 3);
+    EXPECT_REF(node2, 3);
+
+    hr = IMFTopology_Clear(topology);
+    ok(hr == S_OK, "Failed to clear topology, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 1);
+    EXPECT_REF(node2, 1);
+
+    /* Removing connected node breaks connection. */
+    hr = IMFTopology_AddNode(topology, node);
+    ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    hr = IMFTopology_AddNode(topology, node2);
+    ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
+    ok(hr == S_OK, "Failed to connect nodes, hr %#x.\n", hr);
+
+    hr = IMFTopology_RemoveNode(topology, node);
+    ok(hr == S_OK, "Failed to remove a node, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 1);
+    EXPECT_REF(node2, 2);
+
+    hr = IMFTopologyNode_GetOutput(node, 0, &node3, &index);
+    ok(hr == MF_E_NOT_FOUND, "Unexpected hr %#x.\n", hr);
+
+    hr = IMFTopology_AddNode(topology, node);
+    ok(hr == S_OK, "Failed to add a node, hr %#x.\n", hr);
+
+    hr = IMFTopologyNode_ConnectOutput(node, 0, node2, 1);
+    ok(hr == S_OK, "Failed to connect nodes, hr %#x.\n", hr);
+
+    hr = IMFTopology_RemoveNode(topology, node2);
+    ok(hr == S_OK, "Failed to remove a node, hr %#x.\n", hr);
+
+    EXPECT_REF(node, 2);
+    EXPECT_REF(node2, 1);
+
+    IMFTopologyNode_Release(node);
+    IMFTopologyNode_Release(node2);
 
     IMFTopology_Release(topology);
 }
@@ -633,6 +944,7 @@ todo_wine
 static void test_media_session(void)
 {
     IMFMediaSession *session;
+    IMFGetService *gs;
     IUnknown *unk;
     HRESULT hr;
 
@@ -644,6 +956,10 @@ static void test_media_session(void)
 
     hr = IMFMediaSession_QueryInterface(session, &IID_IMFAttributes, (void **)&unk);
     ok(hr == E_NOINTERFACE, "Unexpected hr %#x.\n", hr);
+
+    hr = IMFMediaSession_QueryInterface(session, &IID_IMFGetService, (void **)&gs);
+    ok(hr == S_OK, "Failed to get interface, hr %#x.\n", hr);
+    IMFGetService_Release(gs);
 
     test_session_events(session);
 
@@ -940,6 +1256,115 @@ todo_wine
     ok(hr == S_OK, "Failed to shut down, hr %#x.\n", hr);
 }
 
+static HRESULT WINAPI grabber_callback_QueryInterface(IMFSampleGrabberSinkCallback *iface, REFIID riid, void **obj)
+{
+    if (IsEqualIID(riid, &IID_IMFSampleGrabberSinkCallback) ||
+            IsEqualIID(riid, &IID_IMFClockStateSink) ||
+            IsEqualIID(riid, &IID_IUnknown))
+    {
+        *obj = iface;
+        IMFSampleGrabberSinkCallback_AddRef(iface);
+        return S_OK;
+    }
+
+    *obj = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI grabber_callback_AddRef(IMFSampleGrabberSinkCallback *iface)
+{
+    return 2;
+}
+
+static ULONG WINAPI grabber_callback_Release(IMFSampleGrabberSinkCallback *iface)
+{
+    return 1;
+}
+
+static HRESULT WINAPI grabber_callback_OnClockStart(IMFSampleGrabberSinkCallback *iface, MFTIME time, LONGLONG offset)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnClockStop(IMFSampleGrabberSinkCallback *iface, MFTIME time)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnClockPause(IMFSampleGrabberSinkCallback *iface, MFTIME time)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnClockRestart(IMFSampleGrabberSinkCallback *iface, MFTIME time)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnClockSetRate(IMFSampleGrabberSinkCallback *iface, MFTIME time, float rate)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnSetPresentationClock(IMFSampleGrabberSinkCallback *iface,
+        IMFPresentationClock *clock)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnProcessSample(IMFSampleGrabberSinkCallback *iface, REFGUID major_type,
+        DWORD sample_flags, LONGLONG sample_time, LONGLONG sample_duration, const BYTE *buffer, DWORD sample_size)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI grabber_callback_OnShutdown(IMFSampleGrabberSinkCallback *iface)
+{
+    return E_NOTIMPL;
+}
+
+static const IMFSampleGrabberSinkCallbackVtbl grabber_callback_vtbl =
+{
+    grabber_callback_QueryInterface,
+    grabber_callback_AddRef,
+    grabber_callback_Release,
+    grabber_callback_OnClockStart,
+    grabber_callback_OnClockStop,
+    grabber_callback_OnClockPause,
+    grabber_callback_OnClockRestart,
+    grabber_callback_OnClockSetRate,
+    grabber_callback_OnSetPresentationClock,
+    grabber_callback_OnProcessSample,
+    grabber_callback_OnShutdown,
+};
+
+static IMFSampleGrabberSinkCallback grabber_callback = { &grabber_callback_vtbl };
+
+static void test_sample_grabber(void)
+{
+    IMFMediaType *media_type;
+    IMFActivate *activate;
+    ULONG refcount;
+    HRESULT hr;
+
+    hr = MFCreateMediaType(&media_type);
+    ok(hr == S_OK, "Failed to create media type, hr %#x.\n", hr);
+
+    hr = MFCreateSampleGrabberSinkActivate(NULL, NULL, &activate);
+    ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
+
+    hr = MFCreateSampleGrabberSinkActivate(NULL, &grabber_callback, &activate);
+    ok(hr == E_POINTER, "Unexpected hr %#x.\n", hr);
+
+    hr = MFCreateSampleGrabberSinkActivate(media_type, &grabber_callback, &activate);
+    ok(hr == S_OK, "Failed to create grabber activate, hr %#x.\n", hr);
+
+    refcount = IMFMediaType_Release(media_type);
+    ok(refcount == 1, "Unexpected refcount %u.\n", refcount);
+
+    IMFActivate_Release(activate);
+}
+
 START_TEST(mf)
 {
     test_topology();
@@ -949,4 +1374,5 @@ START_TEST(mf)
     test_media_session();
     test_MFShutdownObject();
     test_presentation_clock();
+    test_sample_grabber();
 }

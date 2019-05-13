@@ -28,18 +28,25 @@ struct _OBJECT_TYPE
     void (*release)(void*);       /* called when the last reference is released */
 };
 
-struct _EPROCESS {
+struct _EPROCESS
+{
     DISPATCHER_HEADER header;
+    PROCESS_BASIC_INFORMATION info;
 };
 
 struct _KTHREAD
 {
     DISPATCHER_HEADER header;
+    PEPROCESS process;
     CLIENT_ID id;
 };
 
+struct _ETHREAD
+{
+    struct _KTHREAD kthread;
+};
+
 void *alloc_kernel_object( POBJECT_TYPE type, HANDLE handle, SIZE_T size, LONG ref ) DECLSPEC_HIDDEN;
-HANDLE kernel_object_handle( void *obj, unsigned int access ) DECLSPEC_HIDDEN;
 NTSTATUS kernel_object_from_handle( HANDLE handle, POBJECT_TYPE type, void **ret ) DECLSPEC_HIDDEN;
 
 extern POBJECT_TYPE ExEventObjectType;

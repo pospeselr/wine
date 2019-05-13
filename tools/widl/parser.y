@@ -313,7 +313,7 @@ static typelib_t *current_typelib;
 %right '!' '~' CAST PPTR POS NEG ADDRESSOF tSIZEOF
 %left '.' MEMBERPTR '[' ']'
 
-%error-verbose
+%define parse.error verbose
 
 %%
 

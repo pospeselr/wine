@@ -184,10 +184,10 @@ static const union {
 #define FP_ZERO       0
 
 short __cdecl _dclass(double);
-#define isfinite(x) (_dclass((double)(x)) <= FP_ZERO)
-#define isinf(x)    (_dclass((double)(x)) == FP_INFINITE)
-#define isnan(x)    (_dclass((double)(x)) == FP_NAN)
-#define isnormal(x) (_dclass((double)(x)) == FP_NORMAL)
+#define isfinite(x) (_finite(x))
+#define isinf(x)    (!(_finite(x) || _isnan(x)))
+#define isnan(x)    (_isnan(x))
+#define isnormal(x) (!!(_fpclass((double)(x)) & (_FPCLASS_NN|_FPCLASS_PN)))
 
 #ifdef __cplusplus
 }
@@ -195,7 +195,7 @@ short __cdecl _dclass(double);
 
 #include <poppack.h>
 
-#ifdef _USE_MATH_DEFINES
+#if !defined(__STRICT_ANSI__) || defined(_POSIX_C_SOURCE) || defined(_POSIX_SOURCE) || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(_USE_MATH_DEFINES)
 #ifndef _MATH_DEFINES_DEFINED
 #define _MATH_DEFINES_DEFINED
 #define M_E         2.71828182845904523536
@@ -221,7 +221,6 @@ static inline double jn( int n, double x ) { return _jn( n, x ); }
 static inline double y0( double x ) { return _y0( x ); }
 static inline double y1( double x ) { return _y1( x ); }
 static inline double yn( int n, double x ) { return _yn( n, x ); }
-static inline double cabs( struct _complex z ) { return _cabs( z ); }
 
 static inline float hypotf( float x, float y ) { return _hypotf( x, y ); }
 

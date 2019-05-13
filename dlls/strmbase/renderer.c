@@ -18,14 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/strmbase.h"
-#include "uuids.h"
-#include "vfwmsgs.h"
 #include "strmbase_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
@@ -227,8 +219,6 @@ static const BaseFilterFuncTable RendererBaseFilterFuncTable = {
 static const BaseInputPinFuncTable input_BaseInputFuncTable = {
     {
         BaseRenderer_Input_CheckMediaType,
-        NULL,
-        BasePinImpl_GetMediaTypeVersion,
         BasePinImpl_GetMediaType
     },
     BaseRenderer_Receive

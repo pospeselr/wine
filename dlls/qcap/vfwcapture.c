@@ -658,10 +658,10 @@ static inline VfwPinImpl *impl_from_BasePin(BasePin *pin)
     return CONTAINING_RECORD(pin, VfwPinImpl, pin.pin);
 }
 
-static HRESULT WINAPI VfwPin_CheckMediaType(BasePin *pin, const AM_MEDIA_TYPE *amt)
+static HRESULT WINAPI VfwPin_CheckMediaType(BasePin *pin, const AM_MEDIA_TYPE *mt)
 {
-    FIXME("(%p) stub\n", pin);
-    return E_NOTIMPL;
+    VfwPinImpl *filter = impl_from_BasePin(pin);
+    return qcap_driver_check_format(filter->parent->driver_info, mt);
 }
 
 static HRESULT WINAPI VfwPin_GetMediaType(BasePin *pin, int iPosition, AM_MEDIA_TYPE *pmt)
@@ -683,11 +683,6 @@ static HRESULT WINAPI VfwPin_GetMediaType(BasePin *pin, int iPosition, AM_MEDIA_
     return hr;
 }
 
-static LONG WINAPI VfwPin_GetMediaTypeVersion(BasePin *iface)
-{
-    return 1;
-}
-
 static HRESULT WINAPI VfwPin_DecideBufferSize(BaseOutputPin *iface, IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *ppropInputRequest)
 {
     ALLOCATOR_PROPERTIES actual;
@@ -707,13 +702,11 @@ static HRESULT WINAPI VfwPin_DecideBufferSize(BaseOutputPin *iface, IMemAllocato
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
     {
         VfwPin_CheckMediaType,
-        BaseOutputPinImpl_AttemptConnection,
-        VfwPin_GetMediaTypeVersion,
         VfwPin_GetMediaType
     },
+    BaseOutputPinImpl_AttemptConnection,
     VfwPin_DecideBufferSize,
     BaseOutputPinImpl_DecideAllocator,
-    BaseOutputPinImpl_BreakConnect
 };
 
 static HRESULT

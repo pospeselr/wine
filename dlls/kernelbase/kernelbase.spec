@@ -576,7 +576,8 @@
 # @ stub GetNextFgPolicyRefreshInfoInternal
 @ stdcall GetNumaHighestNodeNumber(ptr) kernel32.GetNumaHighestNodeNumber
 @ stdcall GetNumaNodeProcessorMaskEx(long ptr) kernel32.GetNumaNodeProcessorMaskEx
-# @ stub GetNumaProximityNodeEx
+@ stdcall GetNumaProximityNode(long ptr) kernel32.GetNumaProximityNode
+@ stdcall GetNumaProximityNodeEx(long ptr) kernel32.GetNumaProximityNodeEx
 @ stdcall GetNumberFormatEx(wstr long wstr ptr ptr long) kernel32.GetNumberFormatEx
 @ stdcall GetNumberFormatW(long long wstr ptr ptr long) kernel32.GetNumberFormatW
 @ stdcall GetNumberOfConsoleInputEvents(long ptr) kernel32.GetNumberOfConsoleInputEvents
@@ -908,7 +909,7 @@
 @ stdcall K32GetProcessImageFileNameW(long ptr long) kernel32.K32GetProcessImageFileNameW
 @ stdcall K32GetProcessMemoryInfo(long ptr long) kernel32.K32GetProcessMemoryInfo
 @ stdcall K32GetWsChanges(long ptr long) kernel32.K32GetWsChanges
-# @ stub K32GetWsChangesEx
+@ stdcall K32GetWsChangesEx(long ptr ptr) kernel32.K32GetWsChangesEx
 @ stdcall K32InitializeProcessForWsWatch(long) kernel32.K32InitializeProcessForWsWatch
 @ stdcall K32QueryWorkingSet(long ptr long) kernel32.K32QueryWorkingSet
 @ stdcall K32QueryWorkingSetEx(long ptr long) kernel32.K32QueryWorkingSetEx
@@ -948,7 +949,7 @@
 @ stdcall MakeSelfRelativeSD(ptr ptr ptr) advapi32.MakeSelfRelativeSD
 @ stdcall MapGenericMask(ptr ptr) advapi32.MapGenericMask
 # @ stub MapPredefinedHandleInternal
-# @ stub MapUserPhysicalPages
+@ stdcall MapUserPhysicalPages(ptr long ptr) kernel32.MapUserPhysicalPages
 @ stdcall MapViewOfFile(long long long long long) kernel32.MapViewOfFile
 @ stdcall MapViewOfFileEx(long long long long long ptr) kernel32.MapViewOfFileEx
 @ stub MapViewOfFileExNuma

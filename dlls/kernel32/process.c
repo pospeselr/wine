@@ -550,7 +550,7 @@ static void set_registry_variables( HANDLE hkey, ULONG type )
         }
         /* PATH is magic */
         if (env_name.Length == sizeof(pathW) &&
-            !memicmpW( env_name.Buffer, pathW, ARRAY_SIZE( pathW )) &&
+            !strncmpiW( env_name.Buffer, pathW, ARRAY_SIZE( pathW )) &&
             !RtlQueryEnvironmentVariable_U( NULL, &env_name, &tmp ))
         {
             RtlAppendUnicodeToString( &tmp, sep );
@@ -2029,6 +2029,27 @@ static BOOL terminate_main_thread(void)
 }
 #endif
 
+
+/***********************************************************************
+ *           set_stdio_fd
+ */
+static void set_stdio_fd( int stdin_fd, int stdout_fd )
+{
+    int fd = -1;
+
+    if (stdin_fd == -1 || stdout_fd == -1)
+    {
+        fd = open( "/dev/null", O_RDWR );
+        if (stdin_fd == -1) stdin_fd = fd;
+        if (stdout_fd == -1) stdout_fd = fd;
+    }
+
+    dup2( stdin_fd, 0 );
+    dup2( stdout_fd, 1 );
+    if (fd != -1) close( fd );
+}
+
+
 /***********************************************************************
  *           spawn_loader
  */
@@ -2060,21 +2081,10 @@ static pid_t spawn_loader( const RTL_USER_PROCESS_PARAMETERS *params, int socket
             if (params->ConsoleFlags || params->ConsoleHandle == KERNEL32_CONSOLE_ALLOC ||
                 (params->hStdInput == INVALID_HANDLE_VALUE && params->hStdOutput == INVALID_HANDLE_VALUE))
             {
-                int fd = open( "/dev/null", O_RDWR );
                 setsid();
-                /* close stdin and stdout */
-                if (fd != -1)
-                {
-                    dup2( fd, 0 );
-                    dup2( fd, 1 );
-                    close( fd );
-                }
+                set_stdio_fd( -1, -1 );  /* close stdin and stdout */
             }
-            else
-            {
-                if (stdin_fd != -1) dup2( stdin_fd, 0 );
-                if (stdout_fd != -1) dup2( stdout_fd, 1 );
-            }
+            else set_stdio_fd( stdin_fd, stdout_fd );
 
             if (stdin_fd != -1) close( stdin_fd );
             if (stdout_fd != -1) close( stdout_fd );
@@ -4449,6 +4459,16 @@ BOOL WINAPI GetNumaAvailableMemoryNode(UCHAR node, PULONGLONG available_bytes)
     return FALSE;
 }
 
+/**********************************************************************
+ *           GetNumaAvailableMemoryNodeEx     (KERNEL32.@)
+ */
+BOOL WINAPI GetNumaAvailableMemoryNodeEx(USHORT node, PULONGLONG available_bytes)
+{
+    FIXME("(%hu %p): stub\n", node, available_bytes);
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
 /***********************************************************************
  *           GetNumaProcessorNode (KERNEL32.@)
  */
@@ -4467,6 +4487,33 @@ BOOL WINAPI GetNumaProcessorNode(UCHAR processor, PUCHAR node)
 
     *node = 0xFF;
     SetLastError(ERROR_INVALID_PARAMETER);
+    return FALSE;
+}
+
+/***********************************************************************
+ *           GetNumaProcessorNodeEx (KERNEL32.@)
+ */
+BOOL WINAPI GetNumaProcessorNodeEx(PPROCESSOR_NUMBER processor, PUSHORT node_number)
+{
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+/***********************************************************************
+ *           GetNumaProximityNode (KERNEL32.@)
+ */
+BOOL WINAPI GetNumaProximityNode(ULONG  proximity_id, PUCHAR node_number)
+{
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+    return FALSE;
+}
+
+/***********************************************************************
+ *           GetNumaProximityNodeEx (KERNEL32.@)
+ */
+BOOL WINAPI GetNumaProximityNodeEx(ULONG  proximity_id, PUSHORT node_number)
+{
+    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }
 

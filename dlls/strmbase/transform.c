@@ -18,23 +18,7 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include "config.h"
-#include <stdarg.h>
 
-#define COBJMACROS
-
-#include "windef.h"
-#include "winbase.h"
-#include "dshow.h"
-#include "amvideo.h"
-#include "strmif.h"
-#include "vfw.h"
-
-#include <assert.h>
-
-#include "wine/unicode.h"
-#include "wine/debug.h"
-#include "wine/strmbase.h"
 #include "strmbase_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
@@ -168,8 +152,6 @@ static const BaseFilterFuncTable tfBaseFuncTable = {
 static const BaseInputPinFuncTable tf_input_BaseInputFuncTable = {
     {
         TransformFilter_Input_CheckMediaType,
-        NULL,
-        BasePinImpl_GetMediaTypeVersion,
         BasePinImpl_GetMediaType
     },
     TransformFilter_Input_Receive
@@ -178,13 +160,11 @@ static const BaseInputPinFuncTable tf_input_BaseInputFuncTable = {
 static const BaseOutputPinFuncTable tf_output_BaseOutputFuncTable = {
     {
         TransformFilter_Output_CheckMediaType,
-        BaseOutputPinImpl_AttemptConnection,
-        BasePinImpl_GetMediaTypeVersion,
         TransformFilter_Output_GetMediaType
     },
+    BaseOutputPinImpl_AttemptConnection,
     TransformFilter_Output_DecideBufferSize,
     BaseOutputPinImpl_DecideAllocator,
-    BaseOutputPinImpl_BreakConnect
 };
 
 static HRESULT TransformFilter_Init(const IBaseFilterVtbl *pVtbl, const CLSID* pClsid, const TransformFilterFuncTable* pFuncsTable, TransformFilter* pTransformFilter)

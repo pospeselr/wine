@@ -1594,11 +1594,16 @@ static void test_feature_level(void)
 
 static void test_device_interfaces(void)
 {
+    ID3D11DeviceContext *immediate_context;
+    ID3D11Multithread *d3d11_multithread;
+    ULONG refcount, expected_refcount;
+    ID3D10Multithread *multithread;
+    ID3D11Device *d3d11_device;
     IDXGIAdapter *dxgi_adapter;
     IDXGIDevice *dxgi_device;
     ID3D10Device *device;
     IUnknown *iface;
-    ULONG refcount;
+    BOOL enabled;
     HRESULT hr;
 
     if (!(device = create_device()))
@@ -1615,20 +1620,56 @@ static void test_device_interfaces(void)
     check_interface(device, &IID_ID3D11Device, TRUE, TRUE); /* Not available on all Windows versions. */
 
     hr = ID3D10Device_QueryInterface(device, &IID_IDXGIDevice, (void **)&dxgi_device);
-    ok(SUCCEEDED(hr), "Device should implement IDXGIDevice.\n");
+    ok(hr == S_OK, "Device should implement IDXGIDevice.\n");
     hr = IDXGIDevice_GetParent(dxgi_device, &IID_IDXGIAdapter, (void **)&dxgi_adapter);
-    ok(SUCCEEDED(hr), "Device parent should implement IDXGIAdapter.\n");
+    ok(hr == S_OK, "Device parent should implement IDXGIAdapter.\n");
     hr = IDXGIAdapter_GetParent(dxgi_adapter, &IID_IDXGIFactory, (void **)&iface);
-    ok(SUCCEEDED(hr), "Adapter parent should implement IDXGIFactory.\n");
+    ok(hr == S_OK, "Adapter parent should implement IDXGIFactory.\n");
     IUnknown_Release(iface);
     IUnknown_Release(dxgi_adapter);
     hr = IDXGIDevice_GetParent(dxgi_device, &IID_IDXGIAdapter1, (void **)&dxgi_adapter);
-    ok(SUCCEEDED(hr), "Device parent should implement IDXGIAdapter1.\n");
+    ok(hr == S_OK, "Device parent should implement IDXGIAdapter1.\n");
     hr = IDXGIAdapter_GetParent(dxgi_adapter, &IID_IDXGIFactory1, (void **)&iface);
     ok(hr == E_NOINTERFACE, "Adapter parent should not implement IDXGIFactory1.\n");
     IUnknown_Release(dxgi_adapter);
     IUnknown_Release(dxgi_device);
 
+    hr = ID3D10Device_QueryInterface(device, &IID_ID3D11Device, (void **)&d3d11_device);
+    if (hr != S_OK)
+        goto done;
+
+    expected_refcount = get_refcount(device) + 1;
+
+    hr = ID3D10Device_QueryInterface(device, &IID_ID3D10Multithread, (void **)&multithread);
+    ok(hr == S_OK, "Got unexpected hr %#x.\n", hr);
+
+    refcount = get_refcount(device);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+
+    expected_refcount = refcount;
+    refcount = get_refcount(multithread);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+
+    ID3D11Device_GetImmediateContext(d3d11_device, &immediate_context);
+    hr = ID3D11DeviceContext_QueryInterface(immediate_context,
+            &IID_ID3D11Multithread, (void **)&d3d11_multithread);
+    ok(hr == S_OK, "Got unexpected hr %#x.\n", hr);
+
+    expected_refcount = get_refcount(immediate_context);
+    refcount = get_refcount(d3d11_multithread);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+
+    enabled = ID3D10Multithread_GetMultithreadProtected(multithread);
+    ok(enabled, "Multithread protection is %#x.\n", enabled);
+    enabled = ID3D11Multithread_GetMultithreadProtected(d3d11_multithread);
+    ok(enabled, "Multithread protection is %#x.\n", enabled);
+
+    ID3D11Device_Release(d3d11_device);
+    ID3D11DeviceContext_Release(immediate_context);
+    ID3D10Multithread_Release(multithread);
+    ID3D11Multithread_Release(d3d11_multithread);
+
+done:
     refcount = ID3D10Device_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
 }
@@ -13349,7 +13390,7 @@ static void check_format_support(const unsigned int *format_support,
     }
 }
 
-static void test_required_format_support(void)
+static void test_format_support(void)
 {
     unsigned int format_support[DXGI_FORMAT_B4G4R4A4_UNORM + 1];
     ID3D10Device *device;
@@ -13383,6 +13424,22 @@ static void test_required_format_support(void)
                 "Got unexpected result for format %#x: hr %#x, format_support %#x.\n",
                 format, hr, format_support[format]);
     }
+
+    for (format = DXGI_FORMAT_UNKNOWN; format <= DXGI_FORMAT_B4G4R4A4_UNORM; ++format)
+    {
+        ok(!(format_support[format] & D3D10_FORMAT_SUPPORT_SHADER_GATHER),
+                "Unexpected SHADER_GATHER for format %#x.\n", format);
+        ok(!(format_support[format] & D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON),
+                "Unexpected SHADER_GATHER_COMPARISON for format %#x.\n", format);
+    }
+
+    ok(format_support[DXGI_FORMAT_R8G8B8A8_UNORM] & D3D10_FORMAT_SUPPORT_SHADER_SAMPLE,
+            "SHADER_SAMPLE is not supported for R8G8B8A8_UNORM.\n");
+    todo_wine
+    ok(!(format_support[DXGI_FORMAT_R32G32B32A32_UINT] & D3D10_FORMAT_SUPPORT_SHADER_SAMPLE),
+            "SHADER_SAMPLE is supported for R32G32B32A32_UINT.\n");
+    ok(format_support[DXGI_FORMAT_R32G32B32A32_UINT] & D3D10_FORMAT_SUPPORT_SHADER_LOAD,
+            "SHADER_LOAD is not supported for R32G32B32A32_UINT.\n");
 
     check_format_support(format_support, index_buffers, ARRAY_SIZE(index_buffers),
             D3D10_FORMAT_SUPPORT_IA_INDEX_BUFFER, "index buffer");
@@ -15765,6 +15822,7 @@ static void test_depth_bias(void)
 
                 for (k = 0; k < ARRAY_SIZE(bias_clamp_tests); ++k)
                 {
+                    BOOL all_match = TRUE;
                     rasterizer_desc.DepthBiasClamp = bias_clamp_tests[k];
                     ID3D10Device_CreateRasterizerState(device, &rasterizer_desc, &rs);
                     ok(SUCCEEDED(hr), "Failed to create rasterizer state, hr %#x.\n", hr);
@@ -15775,21 +15833,23 @@ static void test_depth_bias(void)
                     m = quad_slopes[i] / texture_desc.Height;
                     bias = clamp_depth_bias(rasterizer_desc.SlopeScaledDepthBias * m, rasterizer_desc.DepthBiasClamp);
                     get_texture_readback(texture, 0, &rb);
-                    for (y = 0; y < texture_desc.Height; ++y)
+                    for (y = 0; y < texture_desc.Height && all_match; ++y)
                     {
                         depth = min(max(0.0f, depth_values[y] + bias), 1.0f);
                         switch (format)
                         {
                             case DXGI_FORMAT_D32_FLOAT:
                                 data = get_readback_float(&rb, 0, y);
-                                ok(compare_float(data, depth, 64),
+                                all_match = compare_float(data, depth, 64);
+                                ok(all_match,
                                         "Got depth %.8e, expected %.8e.\n", data, depth);
                                 break;
                             case DXGI_FORMAT_D24_UNORM_S8_UINT:
                                 u32 = get_readback_data(&rb, 0, y, sizeof(*u32));
                                 u32_value = *u32 >> shift;
                                 expected_value = depth * 16777215.0f + 0.5f;
-                                ok(abs(u32_value - expected_value) <= 3,
+                                all_match = abs(u32_value - expected_value) <= 3;
+                                ok(all_match,
                                         "Got value %#x (%.8e), expected %#x (%.8e).\n",
                                         u32_value, u32_value / 16777215.0f,
                                         expected_value, expected_value / 16777215.0f);
@@ -15797,7 +15857,8 @@ static void test_depth_bias(void)
                             case DXGI_FORMAT_D16_UNORM:
                                 u16 = get_readback_data(&rb, 0, y, sizeof(*u16));
                                 expected_value = depth * 65535.0f + 0.5f;
-                                ok(abs(*u16 - expected_value) <= 1,
+                                all_match = abs(*u16 - expected_value) <= 1;
+                                ok(all_match,
                                         "Got value %#x (%.8e), expected %#x (%.8e).\n",
                                         *u16, *u16 / 65535.0f, expected_value, expected_value / 65535.0f);
                                 break;
@@ -18012,7 +18073,7 @@ START_TEST(d3d10core)
     queue_test(test_index_buffer_offset);
     queue_test(test_face_culling);
     queue_test(test_line_antialiasing_blending);
-    queue_test(test_required_format_support);
+    queue_test(test_format_support);
     queue_test(test_ddy);
     queue_test(test_shader_input_registers_limits);
     queue_test(test_unbind_shader_resource_view);

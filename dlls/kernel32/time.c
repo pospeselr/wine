@@ -380,7 +380,7 @@ static BOOL reg_load_mui_string(HKEY hkey, LPCWSTR value, LPWSTR buffer, DWORD s
     if (hDll) {
         pRegLoadMUIStringW = (void *)GetProcAddress(hDll, "RegLoadMUIStringW");
         if (pRegLoadMUIStringW &&
-            !pRegLoadMUIStringW(hkey, value, buffer, size, NULL, 0, NULL))
+            !pRegLoadMUIStringW(hkey, value, buffer, size, NULL, 0, DIR_System))
             ret = TRUE;
         FreeLibrary(hDll);
     }
@@ -1067,6 +1067,7 @@ int WINAPI GetCalendarInfoW(LCID Locale, CALID Calendar, CALTYPE CalType,
 	case CAL_SABBREVMONTHNAME11:
 	case CAL_SABBREVMONTHNAME12:
 	case CAL_SABBREVMONTHNAME13:
+	case CAL_SMONTHDAY:
 	case CAL_SYEARMONTH:
 	case CAL_SSHORTESTDAYNAME1:
 	case CAL_SSHORTESTDAYNAME2:
@@ -1097,9 +1098,6 @@ int WINAPI GetCalendarInfoW(LCID Locale, CALID Calendar, CALTYPE CalType,
                 return 0;
             }
 	    break;
-	case CAL_SMONTHDAY:
-            FIXME("Unimplemented caltype %d\n", calinfo);
-	    return 0;
 	case CAL_SABBREVERASTRING:
             FIXME("Unimplemented caltype %d\n", calinfo);
 	    return 0;

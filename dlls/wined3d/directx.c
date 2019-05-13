@@ -28,6 +28,7 @@
 #include "winternl.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
+WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
 #define DEFAULT_REFRESH_RATE 0
 
@@ -501,8 +502,46 @@ const struct wined3d_gpu_description *wined3d_get_gpu_description(enum wined3d_p
     return NULL;
 }
 
+const struct wined3d_gpu_description *wined3d_get_user_override_gpu_description(enum wined3d_pci_vendor vendor,
+        enum wined3d_pci_device device)
+{
+    const struct wined3d_gpu_description *gpu_desc;
+    static unsigned int once;
+
+    if (wined3d_settings.pci_vendor_id == PCI_VENDOR_NONE && wined3d_settings.pci_device_id == PCI_DEVICE_NONE)
+        return NULL;
+
+    if (wined3d_settings.pci_vendor_id != PCI_VENDOR_NONE)
+    {
+        vendor = wined3d_settings.pci_vendor_id;
+        TRACE("Overriding vendor PCI ID with 0x%04x.\n", vendor);
+    }
+    if (wined3d_settings.pci_device_id != PCI_DEVICE_NONE)
+    {
+        device = wined3d_settings.pci_device_id;
+        TRACE("Overriding device PCI ID with 0x%04x.\n", device);
+    }
+
+    if (!(gpu_desc = wined3d_get_gpu_description(vendor, device)) && !once++)
+        ERR_(winediag)("Invalid GPU override %04x:%04x specified, ignoring.\n", vendor, device);
+
+    return gpu_desc;
+}
+
+static void wined3d_copy_name(char *dst, const char *src, unsigned int dst_size)
+{
+    size_t len;
+
+    if (dst_size)
+    {
+        len = min(strlen(src), dst_size - 1);
+        memcpy(dst, src, len);
+        memset(&dst[len], 0, dst_size - len);
+    }
+}
+
 void wined3d_driver_info_init(struct wined3d_driver_info *driver_info,
-        const struct wined3d_gpu_description *gpu_desc, UINT64 vram_bytes)
+        const struct wined3d_gpu_description *gpu_desc, UINT64 vram_bytes, UINT64 sysmem_bytes)
 {
     const struct driver_version_information *version_info;
     enum wined3d_driver_model driver_model;
@@ -576,7 +615,7 @@ void wined3d_driver_info_init(struct wined3d_driver_info *driver_info,
 
     driver_info->vendor = gpu_desc->vendor;
     driver_info->device = gpu_desc->device;
-    driver_info->description = gpu_desc->description;
+    wined3d_copy_name(driver_info->description, gpu_desc->description, ARRAY_SIZE(driver_info->description));
     driver_info->vram_bytes = vram_bytes ? vram_bytes : (UINT64)gpu_desc->vidmem * 1024 * 1024;
     driver = gpu_desc->driver;
 
@@ -598,12 +637,15 @@ void wined3d_driver_info_init(struct wined3d_driver_info *driver_info,
         driver_info->vram_bytes = LONG_MAX;
     }
 
-    driver_info->sysmem_bytes = 64 * 1024 * 1024;
-    memory_status.dwLength = sizeof(memory_status);
-    if (GlobalMemoryStatusEx(&memory_status))
-        driver_info->sysmem_bytes = max(memory_status.ullTotalPhys / 2, driver_info->sysmem_bytes);
-    else
-        ERR("Failed to get global memory status.\n");
+    if (!(driver_info->sysmem_bytes = sysmem_bytes))
+    {
+        driver_info->sysmem_bytes = 64 * 1024 * 1024;
+        memory_status.dwLength = sizeof(memory_status);
+        if (GlobalMemoryStatusEx(&memory_status))
+            driver_info->sysmem_bytes = max(memory_status.ullTotalPhys / 2, driver_info->sysmem_bytes);
+        else
+            ERR("Failed to get global memory status.\n");
+    }
 
     /* Try to obtain driver version information for the current Windows version. This fails in
      * some cases:
@@ -1171,7 +1213,6 @@ HRESULT CDECL wined3d_get_adapter_identifier(const struct wined3d *wined3d,
         UINT adapter_idx, DWORD flags, struct wined3d_adapter_identifier *identifier)
 {
     const struct wined3d_adapter *adapter;
-    size_t len;
 
     TRACE("wined3d %p, adapter_idx %u, flags %#x, identifier %p.\n",
             wined3d, adapter_idx, flags, identifier);
@@ -1183,21 +1224,8 @@ HRESULT CDECL wined3d_get_adapter_identifier(const struct wined3d *wined3d,
 
     adapter = wined3d->adapters[adapter_idx];
 
-    if (identifier->driver_size)
-    {
-        const char *name = adapter->driver_info.name;
-        len = min(strlen(name), identifier->driver_size - 1);
-        memcpy(identifier->driver, name, len);
-        memset(&identifier->driver[len], 0, identifier->driver_size - len);
-    }
-
-    if (identifier->description_size)
-    {
-        const char *description = adapter->driver_info.description;
-        len = min(strlen(description), identifier->description_size - 1);
-        memcpy(identifier->description, description, len);
-        memset(&identifier->description[len], 0, identifier->description_size - len);
-    }
+    wined3d_copy_name(identifier->driver, adapter->driver_info.name, identifier->driver_size);
+    wined3d_copy_name(identifier->description, adapter->driver_info.description, identifier->description_size);
 
     /* Note that d3d8 doesn't supply a device name. */
     if (identifier->device_name_size)
@@ -2230,10 +2258,32 @@ static void adapter_no3d_destroy_device(struct wined3d_device *device)
     heap_free(device);
 }
 
-static BOOL wined3d_adapter_no3d_create_context(struct wined3d_context *context,
-        struct wined3d_texture *target, const struct wined3d_format *ds_format)
+static HRESULT adapter_no3d_create_context(struct wined3d_swapchain *swapchain, struct wined3d_context **context)
 {
-    return TRUE;
+    struct wined3d_context *context_no3d;
+
+    TRACE("swapchain %p, context %p.\n", swapchain, context);
+
+    if (!(context_no3d = heap_alloc_zero(sizeof(*context_no3d))))
+        return E_OUTOFMEMORY;
+
+    if (FAILED(wined3d_context_no3d_init(context_no3d, swapchain)))
+    {
+        WARN("Failed to initialise context.\n");
+        heap_free(context_no3d);
+        return E_FAIL;
+    }
+
+    TRACE("Created context %p.\n", context_no3d);
+    *context = context_no3d;
+
+    return WINED3D_OK;
+}
+
+static void adapter_no3d_destroy_context(struct wined3d_context *context)
+{
+    wined3d_context_cleanup(context);
+    heap_free(context);
 }
 
 static void adapter_no3d_get_wined3d_caps(const struct wined3d_adapter *adapter, struct wined3d_caps *caps)
@@ -2247,14 +2297,37 @@ static BOOL adapter_no3d_check_format(const struct wined3d_adapter *adapter,
     return TRUE;
 }
 
+static HRESULT adapter_no3d_init_3d(struct wined3d_device *device)
+{
+    TRACE("device %p.\n", device);
+
+    if (!(device->blitter = wined3d_cpu_blitter_create()))
+    {
+        ERR("Failed to create CPU blitter.\n");
+        return E_FAIL;
+    }
+
+    return WINED3D_OK;
+}
+
+static void adapter_no3d_uninit_3d(struct wined3d_device *device)
+{
+    TRACE("device %p.\n", device);
+
+    device->blitter->ops->blitter_destroy(device->blitter, NULL);
+}
+
 static const struct wined3d_adapter_ops wined3d_adapter_no3d_ops =
 {
     adapter_no3d_destroy,
     adapter_no3d_create_device,
     adapter_no3d_destroy_device,
-    wined3d_adapter_no3d_create_context,
+    adapter_no3d_create_context,
+    adapter_no3d_destroy_context,
     adapter_no3d_get_wined3d_caps,
     adapter_no3d_check_format,
+    adapter_no3d_init_3d,
+    adapter_no3d_uninit_3d,
 };
 
 static void wined3d_adapter_no3d_init_d3d_info(struct wined3d_adapter *adapter, unsigned int wined3d_creation_flags)
@@ -2280,7 +2353,7 @@ static struct wined3d_adapter *wined3d_adapter_no3d_create(unsigned int ordinal,
     if (!(adapter = heap_alloc_zero(sizeof(*adapter))))
         return NULL;
 
-    wined3d_driver_info_init(&adapter->driver_info, &gpu_description, 0);
+    wined3d_driver_info_init(&adapter->driver_info, &gpu_description, 0, 0);
     adapter->vram_bytes_used = 0;
     TRACE("Emulating 0x%s bytes of video ram.\n", wine_dbgstr_longlong(adapter->driver_info.vram_bytes));
 

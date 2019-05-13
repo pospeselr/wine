@@ -42,6 +42,7 @@ extern NTSTATUS WINAPI NtResumeProcess(HANDLE handle);
 struct module_info
 {
     DEBUG_MODULE_PARAMETERS params;
+    char image_name[MAX_PATH];
 };
 
 struct target_process
@@ -57,6 +58,7 @@ struct target_process
         unsigned int unloaded;
         BOOL initialized;
     } modules;
+    ULONG cpu_type;
 };
 
 struct debug_client
@@ -65,6 +67,8 @@ struct debug_client
     IDebugDataSpaces IDebugDataSpaces_iface;
     IDebugSymbols3 IDebugSymbols3_iface;
     IDebugControl2 IDebugControl2_iface;
+    IDebugAdvanced IDebugAdvanced_iface;
+    IDebugSystemObjects IDebugSystemObjects_iface;
     LONG refcount;
     ULONG engine_options;
     struct list targets;
@@ -77,6 +81,55 @@ static struct target_process *debug_client_get_target(struct debug_client *debug
         return NULL;
 
     return LIST_ENTRY(list_head(&debug_client->targets), struct target_process, entry);
+}
+
+static HRESULT debug_target_return_string(const char *str, char *buffer, unsigned int buffer_size,
+        unsigned int *size)
+{
+    unsigned int len = strlen(str), dst_len;
+
+    if (size)
+        *size = len + 1;
+
+    if (buffer && buffer_size)
+    {
+        dst_len = min(len, buffer_size - 1);
+        if (dst_len)
+            memcpy(buffer, str, dst_len);
+        buffer[dst_len] = 0;
+    }
+
+    return len < buffer_size ? S_OK : S_FALSE;
+}
+
+static WORD debug_target_get_module_machine(struct target_process *target, HMODULE module)
+{
+    IMAGE_DOS_HEADER dos = { 0 };
+    WORD machine = 0;
+
+    ReadProcessMemory(target->handle, module, &dos, sizeof(dos), NULL);
+    if (dos.e_magic == IMAGE_DOS_SIGNATURE)
+    {
+        ReadProcessMemory(target->handle, (const char *)module + dos.e_lfanew + 4 /* PE signature */, &machine,
+                sizeof(machine), NULL);
+    }
+
+    return machine;
+}
+
+static DWORD debug_target_get_module_timestamp(struct target_process *target, HMODULE module)
+{
+    IMAGE_DOS_HEADER dos = { 0 };
+    DWORD timestamp = 0;
+
+    ReadProcessMemory(target->handle, module, &dos, sizeof(dos), NULL);
+    if (dos.e_magic == IMAGE_DOS_SIGNATURE)
+    {
+        ReadProcessMemory(target->handle, (const char *)module + dos.e_lfanew + 4 /* PE signature */ +
+                FIELD_OFFSET(IMAGE_FILE_HEADER, TimeDateStamp), &timestamp, sizeof(timestamp), NULL);
+    }
+
+    return timestamp;
 }
 
 static HRESULT debug_target_init_modules_info(struct target_process *target)
@@ -120,8 +173,14 @@ static HRESULT debug_target_init_modules_info(struct target_process *target)
 
             target->modules.info[i].params.Base = (ULONG_PTR)info.lpBaseOfDll;
             target->modules.info[i].params.Size = info.SizeOfImage;
+            target->modules.info[i].params.TimeDateStamp = debug_target_get_module_timestamp(target, modules[i]);
+
+            GetModuleFileNameExA(target->handle, modules[i], target->modules.info[i].image_name,
+                    ARRAY_SIZE(target->modules.info[i].image_name));
         }
     }
+
+    target->cpu_type = debug_target_get_module_machine(target, modules[0]);
 
     heap_free(modules);
 
@@ -202,6 +261,16 @@ static struct debug_client *impl_from_IDebugControl2(IDebugControl2 *iface)
     return CONTAINING_RECORD(iface, struct debug_client, IDebugControl2_iface);
 }
 
+static struct debug_client *impl_from_IDebugAdvanced(IDebugAdvanced *iface)
+{
+    return CONTAINING_RECORD(iface, struct debug_client, IDebugAdvanced_iface);
+}
+
+static struct debug_client *impl_from_IDebugSystemObjects(IDebugSystemObjects *iface)
+{
+    return CONTAINING_RECORD(iface, struct debug_client, IDebugSystemObjects_iface);
+}
+
 static HRESULT STDMETHODCALLTYPE debugclient_QueryInterface(IDebugClient *iface, REFIID riid, void **obj)
 {
     struct debug_client *debug_client = impl_from_IDebugClient(iface);
@@ -227,6 +296,14 @@ static HRESULT STDMETHODCALLTYPE debugclient_QueryInterface(IDebugClient *iface,
             || IsEqualIID(riid, &IID_IDebugControl))
     {
         *obj = &debug_client->IDebugControl2_iface;
+    }
+    else if (IsEqualIID(riid, &IID_IDebugAdvanced))
+    {
+        *obj = &debug_client->IDebugAdvanced_iface;
+    }
+    else if (IsEqualIID(riid, &IID_IDebugSystemObjects))
+    {
+        *obj = &debug_client->IDebugSystemObjects_iface;
     }
     else
     {
@@ -725,9 +802,28 @@ static ULONG STDMETHODCALLTYPE debugdataspaces_Release(IDebugDataSpaces *iface)
 static HRESULT STDMETHODCALLTYPE debugdataspaces_ReadVirtual(IDebugDataSpaces *iface, ULONG64 offset, void *buffer,
         ULONG buffer_size, ULONG *read_len)
 {
-    FIXME("%p, %s, %p, %u, %p stub.\n", iface, wine_dbgstr_longlong(offset), buffer, buffer_size, read_len);
+    struct debug_client *debug_client = impl_from_IDebugDataSpaces(iface);
+    static struct target_process *target;
+    HRESULT hr = S_OK;
+    SIZE_T length;
 
-    return E_NOTIMPL;
+    TRACE("%p, %s, %p, %u, %p.\n", iface, wine_dbgstr_longlong(offset), buffer, buffer_size, read_len);
+
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    if (ReadProcessMemory(target->handle, (const void *)(ULONG_PTR)offset, buffer, buffer_size, &length))
+    {
+        if (read_len)
+            *read_len = length;
+    }
+    else
+    {
+        hr = HRESULT_FROM_WIN32(GetLastError());
+        WARN("Failed to read process memory %#x.\n", hr);
+    }
+
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE debugdataspaces_WriteVirtual(IDebugDataSpaces *iface, ULONG64 offset, void *buffer,
@@ -1405,19 +1501,101 @@ static HRESULT STDMETHODCALLTYPE debugsymbols_GetSourceFileLineOffsets(IDebugSym
 static HRESULT STDMETHODCALLTYPE debugsymbols_GetModuleVersionInformation(IDebugSymbols3 *iface, ULONG index,
         ULONG64 base, const char *item, void *buffer, ULONG buffer_size, ULONG *info_size)
 {
-    FIXME("%p, %u, %s, %s, %p, %u, %p stub.\n", iface, index, wine_dbgstr_longlong(base), debugstr_a(item), buffer,
+    struct debug_client *debug_client = impl_from_IDebugSymbols3(iface);
+    const struct module_info *info;
+    struct target_process *target;
+    void *version_info, *ptr;
+    HRESULT hr = E_FAIL;
+    DWORD handle, size;
+
+    TRACE("%p, %u, %s, %s, %p, %u, %p.\n", iface, index, wine_dbgstr_longlong(base), debugstr_a(item), buffer,
             buffer_size, info_size);
 
-    return E_NOTIMPL;
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    if (index == DEBUG_ANY_ID)
+        info = debug_target_get_module_info_by_base(target, base);
+    else
+        info = debug_target_get_module_info(target, index);
+
+    if (!info)
+    {
+        WARN("Was unable to locate module.\n");
+        return E_INVALIDARG;
+    }
+
+    if (!(size = GetFileVersionInfoSizeA(info->image_name, &handle)))
+        return E_FAIL;
+
+    if (!(version_info = heap_alloc(size)))
+        return E_OUTOFMEMORY;
+
+    if (GetFileVersionInfoA(info->image_name, handle, size, version_info))
+    {
+        if (VerQueryValueA(version_info, item, &ptr, &size))
+        {
+            if (info_size)
+                *info_size = size;
+
+            if (buffer && buffer_size)
+            {
+                unsigned int dst_len = min(size, buffer_size);
+                if (dst_len)
+                    memcpy(buffer, ptr, dst_len);
+            }
+
+            hr = buffer && buffer_size < size ? S_FALSE : S_OK;
+        }
+    }
+
+    heap_free(version_info);
+
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE debugsymbols_GetModuleNameString(IDebugSymbols3 *iface, ULONG which, ULONG index,
         ULONG64 base, char *buffer, ULONG buffer_size, ULONG *name_size)
 {
-    FIXME("%p, %u, %u, %s, %p, %u, %p stub.\n", iface, which, index, wine_dbgstr_longlong(base), buffer, buffer_size,
+    struct debug_client *debug_client = impl_from_IDebugSymbols3(iface);
+    const struct module_info *info;
+    struct target_process *target;
+    HRESULT hr;
+
+    TRACE("%p, %u, %u, %s, %p, %u, %p.\n", iface, which, index, wine_dbgstr_longlong(base), buffer, buffer_size,
             name_size);
 
-    return E_NOTIMPL;
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    if (index == DEBUG_ANY_ID)
+        info = debug_target_get_module_info_by_base(target, base);
+    else
+        info = debug_target_get_module_info(target, index);
+
+    if (!info)
+    {
+        WARN("Was unable to locate module.\n");
+        return E_INVALIDARG;
+    }
+
+    switch (which)
+    {
+        case DEBUG_MODNAME_IMAGE:
+            hr = debug_target_return_string(info->image_name, buffer, buffer_size, name_size);
+            break;
+        case DEBUG_MODNAME_MODULE:
+        case DEBUG_MODNAME_LOADED_IMAGE:
+        case DEBUG_MODNAME_SYMBOL_FILE:
+        case DEBUG_MODNAME_MAPPED_IMAGE:
+            FIXME("Unsupported name info %d.\n", which);
+            return E_NOTIMPL;
+        default:
+            WARN("Unknown name info %d.\n", which);
+            return E_INVALIDARG;
+    }
+
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE debugsymbols_GetConstantName(IDebugSymbols3 *iface, ULONG64 module, ULONG type_id,
@@ -2383,11 +2561,24 @@ static HRESULT STDMETHODCALLTYPE debugcontrol_OutputStackTrace(IDebugControl2 *i
     return E_NOTIMPL;
 }
 
-static HRESULT STDMETHODCALLTYPE debugcontrol_GetDebuggeeType(IDebugControl2 *iface, ULONG *_class, ULONG *qualifier)
+static HRESULT STDMETHODCALLTYPE debugcontrol_GetDebuggeeType(IDebugControl2 *iface, ULONG *debug_class,
+        ULONG *qualifier)
 {
-    FIXME("%p, %p, %p stub.\n", iface, _class, qualifier);
+    struct debug_client *debug_client = impl_from_IDebugControl2(iface);
+    static struct target_process *target;
 
-    return E_NOTIMPL;
+    FIXME("%p, %p, %p stub.\n", iface, debug_class, qualifier);
+
+    *debug_class = DEBUG_CLASS_UNINITIALIZED;
+    *qualifier = 0;
+
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    *debug_class = DEBUG_CLASS_USER_WINDOWS;
+    *qualifier = DEBUG_USER_WINDOWS_PROCESS;
+
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE debugcontrol_GetActualProcessorType(IDebugControl2 *iface, ULONG *type)
@@ -2399,9 +2590,21 @@ static HRESULT STDMETHODCALLTYPE debugcontrol_GetActualProcessorType(IDebugContr
 
 static HRESULT STDMETHODCALLTYPE debugcontrol_GetExecutingProcessorType(IDebugControl2 *iface, ULONG *type)
 {
-    FIXME("%p, %p stub.\n", iface, type);
+    struct debug_client *debug_client = impl_from_IDebugControl2(iface);
+    static struct target_process *target;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("%p, %p.\n", iface, type);
+
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    if (FAILED(hr = debug_target_init_modules_info(target)))
+        return hr;
+
+    *type = target->cpu_type;
+
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE debugcontrol_GetNumberPossibleExecutingProcessorTypes(IDebugControl2 *iface,
@@ -2446,9 +2649,35 @@ static HRESULT STDMETHODCALLTYPE debugcontrol_GetPageSize(IDebugControl2 *iface,
 
 static HRESULT STDMETHODCALLTYPE debugcontrol_IsPointer64Bit(IDebugControl2 *iface)
 {
-    FIXME("%p stub.\n", iface);
+    struct debug_client *debug_client = impl_from_IDebugControl2(iface);
+    static struct target_process *target;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("%p.\n", iface);
+
+    if (!(target = debug_client_get_target(debug_client)))
+        return E_UNEXPECTED;
+
+    if (FAILED(hr = debug_target_init_modules_info(target)))
+        return hr;
+
+    switch (target->cpu_type)
+    {
+        case IMAGE_FILE_MACHINE_I386:
+        case IMAGE_FILE_MACHINE_ARM:
+            hr = S_FALSE;
+            break;
+        case IMAGE_FILE_MACHINE_IA64:
+        case IMAGE_FILE_MACHINE_AMD64:
+        case IMAGE_FILE_MACHINE_ARM64:
+            hr = S_OK;
+            break;
+        default:
+            FIXME("Unexpected cpu type %#x.\n", target->cpu_type);
+            hr = E_UNEXPECTED;
+    }
+
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE debugcontrol_ReadBugCheckData(IDebugControl2 *iface, ULONG *code, ULONG64 *arg1,
@@ -3080,6 +3309,322 @@ static const IDebugControl2Vtbl debugcontrolvtbl =
     debugcontrol_OutputTextReplacements,
 };
 
+static HRESULT STDMETHODCALLTYPE debugadvanced_QueryInterface(IDebugAdvanced *iface, REFIID riid, void **obj)
+{
+    struct debug_client *debug_client = impl_from_IDebugAdvanced(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_QueryInterface(unk, riid, obj);
+}
+
+static ULONG STDMETHODCALLTYPE debugadvanced_AddRef(IDebugAdvanced *iface)
+{
+    struct debug_client *debug_client = impl_from_IDebugAdvanced(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_AddRef(unk);
+}
+
+static ULONG STDMETHODCALLTYPE debugadvanced_Release(IDebugAdvanced *iface)
+{
+    struct debug_client *debug_client = impl_from_IDebugAdvanced(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_Release(unk);
+}
+
+static HRESULT STDMETHODCALLTYPE debugadvanced_GetThreadContext(IDebugAdvanced *iface, void *context,
+        ULONG context_size)
+{
+    FIXME("%p, %p, %u stub.\n", iface, context, context_size);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugadvanced_SetThreadContext(IDebugAdvanced *iface, void *context,
+        ULONG context_size)
+{
+    FIXME("%p, %p, %u stub.\n", iface, context, context_size);
+
+    return E_NOTIMPL;
+}
+
+static const IDebugAdvancedVtbl debugadvancedvtbl =
+{
+    debugadvanced_QueryInterface,
+    debugadvanced_AddRef,
+    debugadvanced_Release,
+    /* IDebugAdvanced */
+    debugadvanced_GetThreadContext,
+    debugadvanced_SetThreadContext,
+};
+
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_QueryInterface(IDebugSystemObjects *iface, REFIID riid, void **obj)
+{
+    struct debug_client *debug_client = impl_from_IDebugSystemObjects(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_QueryInterface(unk, riid, obj);
+}
+
+static ULONG STDMETHODCALLTYPE debugsystemobjects_AddRef(IDebugSystemObjects *iface)
+{
+    struct debug_client *debug_client = impl_from_IDebugSystemObjects(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_AddRef(unk);
+}
+
+static ULONG STDMETHODCALLTYPE debugsystemobjects_Release(IDebugSystemObjects *iface)
+{
+    struct debug_client *debug_client = impl_from_IDebugSystemObjects(iface);
+    IUnknown *unk = (IUnknown *)&debug_client->IDebugClient_iface;
+    return IUnknown_Release(unk);
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetEventThread(IDebugSystemObjects *iface, ULONG *id)
+{
+    FIXME("%p, %p stub.\n", iface, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetEventProcess(IDebugSystemObjects *iface, ULONG *id)
+{
+    FIXME("%p, %p stub.\n", iface, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentThreadId(IDebugSystemObjects *iface, ULONG *id)
+{
+    FIXME("%p, %p stub.\n", iface, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_SetCurrentThreadId(IDebugSystemObjects *iface, ULONG id)
+{
+    FIXME("%p, %u stub.\n", iface, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_SetCurrentProcessId(IDebugSystemObjects *iface, ULONG id)
+{
+    FIXME("%p, %u stub.\n", iface, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetNumberThreads(IDebugSystemObjects *iface, ULONG *number)
+{
+    FIXME("%p, %p stub.\n", iface, number);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetTotalNumberThreads(IDebugSystemObjects *iface, ULONG *total,
+        ULONG *largest_process)
+{
+    FIXME("%p, %p, %p stub.\n", iface, total, largest_process);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdsByIndex(IDebugSystemObjects *iface, ULONG start,
+        ULONG count, ULONG *ids, ULONG *sysids)
+{
+    FIXME("%p, %u, %u, %p, %p stub.\n", iface, start, count, ids, sysids);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdByProcessor(IDebugSystemObjects *iface, ULONG processor,
+        ULONG *id)
+{
+    FIXME("%p, %u, %p stub.\n", iface, processor, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentThreadDataOffset(IDebugSystemObjects *iface,
+        ULONG64 *offset)
+{
+    FIXME("%p, %p stub.\n", iface, offset);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdByDataOffset(IDebugSystemObjects *iface, ULONG64 offset,
+        ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(offset), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentThreadTeb(IDebugSystemObjects *iface, ULONG64 *offset)
+{
+    FIXME("%p, %p stub.\n", iface, offset);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdByTeb(IDebugSystemObjects *iface, ULONG64 offset,
+        ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(offset), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentThreadSystemId(IDebugSystemObjects *iface, ULONG *sysid)
+{
+    FIXME("%p, %p stub.\n", iface, sysid);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdBySystemId(IDebugSystemObjects *iface, ULONG sysid,
+        ULONG *id)
+{
+    FIXME("%p, %u, %p stub.\n", iface, sysid, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentThreadHandle(IDebugSystemObjects *iface, ULONG64 *handle)
+{
+    FIXME("%p, %p stub.\n", iface, handle);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetThreadIdByHandle(IDebugSystemObjects *iface, ULONG64 handle,
+        ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(handle), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetNumberProcesses(IDebugSystemObjects *iface, ULONG *number)
+{
+    FIXME("%p, %p stub.\n", iface, number);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetProcessIdsByIndex(IDebugSystemObjects *iface, ULONG start,
+        ULONG count, ULONG *ids, ULONG *sysids)
+{
+    FIXME("%p, %u, %u, %p, %p stub.\n", iface, start, count, ids, sysids);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentProcessDataOffset(IDebugSystemObjects *iface,
+        ULONG64 *offset)
+{
+    FIXME("%p, %p stub.\n", iface, offset);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetProcessIdByDataOffset(IDebugSystemObjects *iface,
+        ULONG64 offset, ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(offset), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentProcessPeb(IDebugSystemObjects *iface, ULONG64 *offset)
+{
+    FIXME("%p, %p stub.\n", iface, offset);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetProcessIdByPeb(IDebugSystemObjects *iface, ULONG64 offset,
+        ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(offset), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentProcessSystemId(IDebugSystemObjects *iface, ULONG *sysid)
+{
+    FIXME("%p, %p stub.\n", iface, sysid);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetProcessIdBySystemId(IDebugSystemObjects *iface, ULONG sysid,
+        ULONG *id)
+{
+    FIXME("%p, %u, %p stub.\n", iface, sysid, id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentProcessHandle(IDebugSystemObjects *iface,
+        ULONG64 *handle)
+{
+    FIXME("%p, %p stub.\n", iface, handle);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetProcessIdByHandle(IDebugSystemObjects *iface, ULONG64 handle,
+        ULONG *id)
+{
+    FIXME("%p, %s, %p stub.\n", iface, wine_dbgstr_longlong(handle), id);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE debugsystemobjects_GetCurrentProcessExecutableName(IDebugSystemObjects *iface,
+        char *buffer, ULONG buffer_size, ULONG *exe_size)
+{
+    FIXME("%p, %p, %u, %p stub.\n", iface, buffer, buffer_size, exe_size);
+
+    return E_NOTIMPL;
+}
+
+static const IDebugSystemObjectsVtbl debugsystemobjectsvtbl =
+{
+    debugsystemobjects_QueryInterface,
+    debugsystemobjects_AddRef,
+    debugsystemobjects_Release,
+    debugsystemobjects_GetEventThread,
+    debugsystemobjects_GetEventProcess,
+    debugsystemobjects_GetCurrentThreadId,
+    debugsystemobjects_SetCurrentThreadId,
+    debugsystemobjects_SetCurrentProcessId,
+    debugsystemobjects_GetNumberThreads,
+    debugsystemobjects_GetTotalNumberThreads,
+    debugsystemobjects_GetThreadIdsByIndex,
+    debugsystemobjects_GetThreadIdByProcessor,
+    debugsystemobjects_GetCurrentThreadDataOffset,
+    debugsystemobjects_GetThreadIdByDataOffset,
+    debugsystemobjects_GetCurrentThreadTeb,
+    debugsystemobjects_GetThreadIdByTeb,
+    debugsystemobjects_GetCurrentThreadSystemId,
+    debugsystemobjects_GetThreadIdBySystemId,
+    debugsystemobjects_GetCurrentThreadHandle,
+    debugsystemobjects_GetThreadIdByHandle,
+    debugsystemobjects_GetNumberProcesses,
+    debugsystemobjects_GetProcessIdsByIndex,
+    debugsystemobjects_GetCurrentProcessDataOffset,
+    debugsystemobjects_GetProcessIdByDataOffset,
+    debugsystemobjects_GetCurrentProcessPeb,
+    debugsystemobjects_GetProcessIdByPeb,
+    debugsystemobjects_GetCurrentProcessSystemId,
+    debugsystemobjects_GetProcessIdBySystemId,
+    debugsystemobjects_GetCurrentProcessHandle,
+    debugsystemobjects_GetProcessIdByHandle,
+    debugsystemobjects_GetCurrentProcessExecutableName,
+};
+
 /************************************************************
 *                    DebugExtensionInitialize   (DBGENG.@)
 *
@@ -3124,6 +3669,8 @@ HRESULT WINAPI DebugCreate(REFIID riid, void **obj)
     debug_client->IDebugDataSpaces_iface.lpVtbl = &debugdataspacesvtbl;
     debug_client->IDebugSymbols3_iface.lpVtbl = &debugsymbolsvtbl;
     debug_client->IDebugControl2_iface.lpVtbl = &debugcontrolvtbl;
+    debug_client->IDebugAdvanced_iface.lpVtbl = &debugadvancedvtbl;
+    debug_client->IDebugSystemObjects_iface.lpVtbl = &debugsystemobjectsvtbl;
     debug_client->refcount = 1;
     list_init(&debug_client->targets);
 

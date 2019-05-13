@@ -251,6 +251,7 @@ SOURCES = \
 	dxgicommon.idl \
 	dxgiformat.idl \
 	dxgitype.idl \
+	dxva.h \
 	dxva2api.idl \
 	dyngraph.idl \
 	endpointvolume.idl \
@@ -423,6 +424,7 @@ SOURCES = \
 	msvcrt/fcntl.h \
 	msvcrt/float.h \
 	msvcrt/fpieee.h \
+	msvcrt/inttypes.h \
 	msvcrt/io.h \
 	msvcrt/limits.h \
 	msvcrt/locale.h \
@@ -437,6 +439,7 @@ SOURCES = \
 	msvcrt/share.h \
 	msvcrt/signal.h \
 	msvcrt/stddef.h \
+	msvcrt/stdint.h \
 	msvcrt/stdio.h \
 	msvcrt/stdlib.h \
 	msvcrt/string.h \

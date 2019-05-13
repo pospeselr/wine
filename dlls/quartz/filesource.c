@@ -100,8 +100,7 @@ static HRESULT process_extensions(HKEY hkeyExtensions, LPCOLESTR pszFileName, GU
         return E_POINTER;
 
     /* Get the part of the name that matters */
-    extension = PathFindExtensionW(pszFileName);
-    if (*extension != '.')
+    if (!(extension = strrchrW(pszFileName, '.')))
         return E_FAIL;
 
     l = RegOpenKeyExW(hkeyExtensions, extension, 0, KEY_READ, &hsub);
@@ -863,9 +862,9 @@ static const IPinVtbl FileAsyncReaderPin_Vtbl =
 /* specific AM_MEDIA_TYPE - it cannot be NULL */
 /* this differs from standard OutputPin_AttemptConnection only in that it
  * doesn't need the IMemInputPin interface on the receiving pin */
-static HRESULT WINAPI FileAsyncReaderPin_AttemptConnection(BasePin * iface, IPin * pReceivePin, const AM_MEDIA_TYPE * pmt)
+static HRESULT WINAPI FileAsyncReaderPin_AttemptConnection(BaseOutputPin *This,
+        IPin *pReceivePin, const AM_MEDIA_TYPE *pmt)
 {
-    BaseOutputPin *This = impl_BaseOutputPin_from_BasePin(iface);
     HRESULT hr;
 
     TRACE("%p->(%p, %p)\n", This, pReceivePin, pmt);
@@ -877,7 +876,7 @@ static HRESULT WINAPI FileAsyncReaderPin_AttemptConnection(BasePin * iface, IPin
     IPin_AddRef(pReceivePin);
     CopyMediaType(&This->pin.mtCurrent, pmt);
 
-    hr = IPin_ReceiveConnection(pReceivePin, &iface->IPin_iface, pmt);
+    hr = IPin_ReceiveConnection(pReceivePin, &This->pin.IPin_iface, pmt);
 
     if (FAILED(hr))
     {
@@ -910,13 +909,11 @@ static HRESULT WINAPI FileAsyncReaderPin_DecideBufferSize(BaseOutputPin *iface, 
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
     {
         FileAsyncReaderPin_CheckMediaType,
-        FileAsyncReaderPin_AttemptConnection,
-        BasePinImpl_GetMediaTypeVersion,
         FileAsyncReaderPin_GetMediaType
     },
+    FileAsyncReaderPin_AttemptConnection,
     FileAsyncReaderPin_DecideBufferSize,
     BaseOutputPinImpl_DecideAllocator,
-    BaseOutputPinImpl_BreakConnect
 };
 
 static HRESULT FileAsyncReader_Construct(HANDLE hFile, IBaseFilter * pBaseFilter, LPCRITICAL_SECTION pCritSec, IPin ** ppPin)

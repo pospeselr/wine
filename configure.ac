@@ -288,6 +288,19 @@ if test "$BISON" = "none"
 then
   AC_MSG_ERROR([no suitable bison found. Please install the 'bison' package.])
 fi
+AC_CACHE_CHECK([whether bison is recent enough],wine_cv_recent_bison,
+    [cat >conftest.y <<EOF
+%define parse.error verbose
+%%
+empty: ;
+EOF
+    if $BISON conftest.y >/dev/null 2>&AS_MESSAGE_LOG_FD
+    then
+      wine_cv_recent_bison=yes
+    else
+      wine_cv_recent_bison=no
+    fi])
+test $wine_cv_recent_bison != no || AC_MSG_ERROR([Your bison version is too old. Please install bison version 3.0 or newer.])
 
 AC_CHECK_TOOLS(AR,[ar gar],ar)
 AC_CHECK_TOOL(STRIP,strip,strip)
@@ -694,6 +707,7 @@ dnl **** Check for working dll ****
 AC_SUBST(DLLFLAGS,"-D_REENTRANT")
 AC_SUBST(LDRPATH_INSTALL,"")
 AC_SUBST(LDRPATH_LOCAL,"")
+AC_SUBST(LDDLLFLAGS,"")
 AC_SUBST(LDEXECFLAGS,"")
 AC_SUBST(TOP_INSTALL_LIB,"")
 AC_SUBST(TOP_INSTALL_DEV,"")
@@ -714,6 +728,10 @@ case $host_os in
     AC_CHECK_TOOL(DLLTOOL,dlltool,false)
     LIBEXT="dll"
     DLLEXT=""
+    dnl Disable stdcall fixups to catch prototype mismatches
+    case $host_cpu in
+      *i[[3456]]86*) LDDLLFLAGS="-Wl,--disable-stdcall-fixup" ;;
+    esac
     dnl Disable modules that can't be used on Windows
     enable_iphlpapi=${enable_iphlpapi:-no}
     enable_kernel32=${enable_kernel32:-no}
@@ -733,6 +751,7 @@ case $host_os in
     AC_LANG_POP([Objective C])
     LIBEXT="dylib"
     DLLFLAGS="$DLLFLAGS -fPIC"
+    LDDLLFLAGS="-fPIC"
     LDRPATH_INSTALL="-Wl,-rpath,@loader_path/\`\$(MAKEDEP) -R \${bindir} \${libdir}\`"
     LDRPATH_LOCAL="-Wl,-rpath,@loader_path/\$(top_builddir)/libs/wine"
     dnl declare needed frameworks
@@ -878,6 +897,7 @@ case $host_os in
 
   linux-android*)
     DLLFLAGS="$DLLFLAGS -fPIC"
+    LDDLLFLAGS="-fPIC"
     LDEXECFLAGS="-Wl,-pie"
     enable_wineandroid_drv=${enable_wineandroid_drv:-yes}
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],
@@ -911,31 +931,38 @@ case $host_os in
     ;;
 
   *)
-    DLLFLAGS="$DLLFLAGS -fPIC"
+    case $host_cpu in
+      *i[[3456789]]86*)
+        DLLFLAGS="$DLLFLAGS -fno-PIC"
+        LDDLLFLAGS="-fno-PIC" ;;
+      *)
+        DLLFLAGS="$DLLFLAGS -fPIC"
+        LDDLLFLAGS="-fPIC" ;;
+    esac
     AC_CACHE_CHECK([whether we can build a GNU style ELF dll], ac_cv_c_dll_gnuelf,
         [WINE_TRY_SHLIB_FLAGS([-fPIC -shared -Wl,-Bsymbolic],
                               ac_cv_c_dll_gnuelf="yes",ac_cv_c_dll_gnuelf="no")])
     if test "$ac_cv_c_dll_gnuelf" = "yes"
     then
       LIBWINE_LDFLAGS="-shared"
-      WINE_TRY_CFLAGS([-fPIC -shared -Wl,-soname,confest.so.1],
+      WINE_TRY_CFLAGS([-shared -Wl,-soname,confest.so.1],
                       [LIBWINE_LDFLAGS="-shared -Wl,-soname,libwine.so.$libwine_soversion"],
-                      [WINE_TRY_CFLAGS([-fPIC -shared -Wl,-h,confest.so.1],
+                      [WINE_TRY_CFLAGS([-shared -Wl,-h,confest.so.1],
                                        [LIBWINE_LDFLAGS="-shared -Wl,-h,libwine.so.$libwine_soversion"])])
 
       echo '{ global: *; };' >conftest.map
-      WINE_TRY_CFLAGS([-fPIC -shared -Wl,--version-script=conftest.map],
+      WINE_TRY_CFLAGS([-shared -Wl,--version-script=conftest.map],
                       [LIBWINE_LDFLAGS="$LIBWINE_LDFLAGS -Wl,--version-script=\$(srcdir)/wine.map"])
       rm -f conftest.map
 
-      WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],
+      WINE_TRY_CFLAGS([-Wl,--export-dynamic],
                       [WINELOADER_LDFLAGS="-Wl,--export-dynamic"])
       WINEPRELOADER_LDFLAGS="-static -nostartfiles -nodefaultlibs -Wl,-Ttext=0x7c400000"
 
-      WINE_TRY_CFLAGS([-fPIC -Wl,--rpath,\$ORIGIN/../lib],
+      WINE_TRY_CFLAGS([-Wl,--rpath,\$ORIGIN/../lib],
                       [LDRPATH_INSTALL="-Wl,--rpath,\\\$\$ORIGIN/\`\$(MAKEDEP) -R \${bindir} \${libdir}\`"
                        LDRPATH_LOCAL="-Wl,--rpath,\\\$\$ORIGIN/\$(top_builddir)/libs/wine"],
-          [WINE_TRY_CFLAGS([-fPIC -Wl,-R,\$ORIGIN/../lib],
+          [WINE_TRY_CFLAGS([-Wl,-R,\$ORIGIN/../lib],
                            [LDRPATH_INSTALL="-Wl,-R,\\\$\$ORIGIN/\`\$(MAKEDEP) -R \${bindir} \${libdir}\`"
                             LDRPATH_LOCAL="-Wl,-R,\\\$\$ORIGIN/\$(top_builddir)/libs/wine"])])
 
@@ -1937,7 +1964,6 @@ then
   fi
 
   dnl Check for some compiler flags
-  WINE_TRY_CFLAGS([-fno-builtin],[AC_SUBST(BUILTINFLAG,"-fno-builtin")])
   WINE_TRY_CFLAGS([-fno-strict-aliasing])
   WINE_TRY_CFLAGS([-fexcess-precision=standard],[AC_SUBST(EXCESS_PRECISION_CFLAGS,"-fexcess-precision=standard")])
   dnl clang needs to be told to fail on unknown options
@@ -1984,6 +2010,12 @@ char*f(const char *h,char n) {return strchr(h,n);}]])],[ac_cv_c_logicalop_noisy=
     esac
   done
 
+  dnl Disable gcc builtins except for Mingw
+  case $host_os in
+    cygwin*|mingw32*) ;;
+    *) WINE_TRY_CFLAGS([-fno-builtin],[AC_SUBST(BUILTINFLAG,"-fno-builtin")]) ;;
+  esac
+
   dnl gcc-4.6+ omits frame pointers by default, breaking some copy protections
   case $host_cpu in
     *i[[3456789]]86*) WINE_TRY_CFLAGS([-fno-omit-frame-pointer]) ;;
@@ -1998,21 +2030,6 @@ char*f(const char *h,char n) {return strchr(h,n);}]])],[ac_cv_c_logicalop_noisy=
   if test "x$enable_maintainer_mode" = "xyes"
   then
       WINE_TRY_CFLAGS([-Werror])
-  fi
-
-  dnl Check for ms_hook_prologue support
-  saved_CFLAGS="$CFLAGS"
-  CFLAGS="$CFLAGS -Werror"
-  AC_CACHE_CHECK([for ms_hook_prologue attribute], ac_cv_have_ms_hook_prologue,
-                 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[int __attribute__((__ms_hook_prologue__)) test(void) { return 0; }]])],
-                                   [ac_cv_have_ms_hook_prologue="yes"],[ac_cv_have_ms_hook_prologue="no"]))
-  CFLAGS="$saved_CFLAGS"
-  if test "$ac_cv_have_ms_hook_prologue" = "yes"
-  then
-      AC_DEFINE(DECLSPEC_HOTPATCH, [__attribute__((__ms_hook_prologue__))],
-                [Define to a function attribute for Microsoft hotpatch assembly prefix.])
-  else
-      AC_DEFINE(DECLSPEC_HOTPATCH, [/* */])
   fi
 fi
 
@@ -2114,7 +2131,7 @@ then
    asm_func_header="$asm_func_header.cfi_startproc\\n\\t"
    asm_func_trailer="\\n\\t.cfi_endproc$asm_func_trailer"
    AC_DEFINE([__ASM_CFI(str)],[str],[Define to a macro to output a .cfi assembly pseudo-op])
-   AC_SUBST([UNWINDFLAGS],[-fasynchronous-unwind-tables])
+   LDDLLFLAGS="$LDDLLFLAGS -fasynchronous-unwind-tables"
 else
    AC_DEFINE([__ASM_CFI(str)],[""])
    if test "x$enable_win64" = "xyes"
@@ -3472,6 +3489,7 @@ WINE_CONFIG_MAKEFILE(dlls/msisys.ocx)
 WINE_CONFIG_MAKEFILE(dlls/msls31)
 WINE_CONFIG_MAKEFILE(dlls/msnet32)
 WINE_CONFIG_MAKEFILE(dlls/mspatcha)
+WINE_CONFIG_MAKEFILE(dlls/mspatcha/tests)
 WINE_CONFIG_MAKEFILE(dlls/msports)
 WINE_CONFIG_MAKEFILE(dlls/msrle32)
 WINE_CONFIG_MAKEFILE(dlls/msrle32/tests)

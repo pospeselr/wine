@@ -2152,7 +2152,10 @@ static void test_get_immediate_context(void)
 {
     ID3D11DeviceContext *immediate_context, *previous_immediate_context;
     ULONG expected_refcount, refcount;
+    ID3D11Multithread *multithread;
     ID3D11Device *device;
+    BOOL enabled;
+    HRESULT hr;
 
     if (!(device = create_device(NULL)))
     {
@@ -2181,6 +2184,82 @@ static void test_get_immediate_context(void)
     refcount = ID3D11DeviceContext_Release(immediate_context);
     ok(!refcount, "Got unexpected refcount %u.\n", refcount);
 
+    ID3D11Device_GetImmediateContext(device, &immediate_context);
+    expected_refcount = get_refcount(immediate_context) + 1;
+    hr = ID3D11DeviceContext_QueryInterface(immediate_context, &IID_ID3D11Multithread, (void **)&multithread);
+    if (hr == E_NOINTERFACE)
+    {
+        win_skip("ID3D11Multithread is not supported.\n");
+        goto done;
+    }
+    ok(hr == S_OK, "Got unexpected hr %#x.\n", hr);
+
+    refcount = get_refcount(immediate_context);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+
+    expected_refcount = refcount;
+    refcount = get_refcount(multithread);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+
+    enabled = ID3D11Multithread_GetMultithreadProtected(multithread);
+    todo_wine ok(!enabled, "Multithread protection is %#x.\n", enabled);
+
+    ID3D11Multithread_Release(multithread);
+
+done:
+    refcount = ID3D11DeviceContext_Release(immediate_context);
+    ok(!refcount, "Got unexpected refcount %u.\n", refcount);
+    refcount = ID3D11Device_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+}
+
+static void test_create_deferred_context(void)
+{
+    ULONG refcount, expected_refcount;
+    struct device_desc device_desc;
+    ID3D11DeviceContext *context;
+    ID3D11Device *device;
+    HRESULT hr;
+
+    device_desc.feature_level = NULL;
+    device_desc.flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
+    if (!(device = create_device(&device_desc)))
+    {
+        skip("Failed to create single-threaded device.\n");
+        return;
+    }
+
+    hr = ID3D11Device_CreateDeferredContext(device, 0, &context);
+    todo_wine ok(hr == DXGI_ERROR_INVALID_CALL, "Failed to create deferred context, hr %#x.\n", hr);
+
+    refcount = ID3D11Device_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    if (!(device = create_device(NULL)))
+    {
+        skip("Failed to create device.\n");
+        return;
+    }
+
+    expected_refcount = get_refcount(device) + 1;
+    hr = ID3D11Device_CreateDeferredContext(device, 0, &context);
+    todo_wine ok(hr == S_OK, "Failed to create deferred context, hr %#x.\n", hr);
+    if (FAILED(hr))
+        goto done;
+    refcount = get_refcount(device);
+    ok(refcount == expected_refcount, "Got refcount %u, expected %u.\n", refcount, expected_refcount);
+    refcount = get_refcount(context);
+    ok(refcount == 1, "Got unexpected refcount %u.\n", refcount);
+
+    check_interface(context, &IID_IUnknown, TRUE, FALSE);
+    check_interface(context, &IID_ID3D11DeviceChild, TRUE, FALSE);
+    check_interface(context, &IID_ID3D11DeviceContext, TRUE, FALSE);
+    check_interface(context, &IID_ID3D11Multithread, FALSE, FALSE);
+
+    refcount = ID3D11DeviceContext_Release(context);
+    ok(!refcount, "Got unexpected refcount %u.\n", refcount);
+
+done:
     refcount = ID3D11Device_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
 }
@@ -18346,7 +18425,7 @@ static void check_format_support(const unsigned int *format_support, D3D_FEATURE
     }
 }
 
-static void test_required_format_support(const D3D_FEATURE_LEVEL feature_level)
+static void test_format_support(const D3D_FEATURE_LEVEL feature_level)
 {
     unsigned int format_support[DXGI_FORMAT_B4G4R4A4_UNORM + 1];
     struct device_desc device_desc;
@@ -18382,6 +18461,37 @@ static void test_required_format_support(const D3D_FEATURE_LEVEL feature_level)
         ok(hr == S_OK || (hr == E_FAIL && !format_support[format]),
                 "Got unexpected result for format %#x: hr %#x, format_support %#x.\n",
                 format, hr, format_support[format]);
+    }
+
+    for (format = DXGI_FORMAT_UNKNOWN; format <= DXGI_FORMAT_B4G4R4A4_UNORM; ++format)
+    {
+        if (feature_level < D3D_FEATURE_LEVEL_10_0)
+        {
+            /* SHADER_SAMPLE_COMPARISON is never advertised as supported on feature level 9. */
+            ok(!(format_support[format] & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE_COMPARISON),
+                    "Unexpected SHADER_SAMPLE_COMPARISON for format %#x, feature level %#x.\n",
+                    format, feature_level);
+        }
+        if (feature_level < D3D_FEATURE_LEVEL_10_1)
+        {
+            ok(!(format_support[format] & D3D11_FORMAT_SUPPORT_SHADER_GATHER),
+                    "Unexpected SHADER_GATHER for format %#x, feature level %#x.\n",
+                    format, feature_level);
+            ok(!(format_support[format] & D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON),
+                    "Unexpected SHADER_GATHER_COMPARISON for format %#x, feature level %#x.\n",
+                    format, feature_level);
+        }
+    }
+
+    ok(format_support[DXGI_FORMAT_R8G8B8A8_UNORM] & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+            "SHADER_SAMPLE is not supported for R8G8B8A8_UNORM.\n");
+    todo_wine
+    ok(!(format_support[DXGI_FORMAT_R32G32B32A32_UINT] & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE),
+            "SHADER_SAMPLE is supported for R32G32B32A32_UINT.\n");
+    if (feature_level >= D3D_FEATURE_LEVEL_10_0)
+    {
+        ok(format_support[DXGI_FORMAT_R32G32B32A32_UINT] & D3D11_FORMAT_SUPPORT_SHADER_LOAD,
+                "SHADER_LOAD is not supported for R32G32B32A32_UINT.\n");
     }
 
     check_format_support(format_support, feature_level,
@@ -25681,6 +25791,7 @@ static void test_depth_bias(void)
 
                 for (k = 0; k < ARRAY_SIZE(bias_clamp_tests); ++k)
                 {
+                    BOOL all_match = TRUE;
                     rasterizer_desc.DepthBiasClamp = bias_clamp_tests[k];
                     ID3D11Device_CreateRasterizerState(device, &rasterizer_desc, &rs);
                     ok(SUCCEEDED(hr), "Failed to create rasterizer state, hr %#x.\n", hr);
@@ -25691,21 +25802,23 @@ static void test_depth_bias(void)
                     m = quad_slopes[i] / texture_desc.Height;
                     bias = clamp_depth_bias(rasterizer_desc.SlopeScaledDepthBias * m, rasterizer_desc.DepthBiasClamp);
                     get_texture_readback(texture, 0, &rb);
-                    for (y = 0; y < texture_desc.Height; ++y)
+                    for (y = 0; y < texture_desc.Height && all_match; ++y)
                     {
                         depth = min(max(0.0f, depth_values[y] + bias), 1.0f);
                         switch (format)
                         {
                             case DXGI_FORMAT_D32_FLOAT:
                                 data = get_readback_float(&rb, 0, y);
-                                ok(compare_float(data, depth, 64),
+                                all_match = compare_float(data, depth, 64);
+                                ok(all_match,
                                         "Got depth %.8e, expected %.8e.\n", data, depth);
                                 break;
                             case DXGI_FORMAT_D24_UNORM_S8_UINT:
                                 u32 = get_readback_data(&rb, 0, y, 0, sizeof(*u32));
                                 u32_value = *u32 >> shift;
                                 expected_value = depth * 16777215.0f + 0.5f;
-                                ok(abs(u32_value - expected_value) <= 3,
+                                all_match = abs(u32_value - expected_value) <= 3;
+                                ok(all_match,
                                         "Got value %#x (%.8e), expected %#x (%.8e).\n",
                                         u32_value, u32_value / 16777215.0f,
                                         expected_value, expected_value / 16777215.0f);
@@ -25713,7 +25826,8 @@ static void test_depth_bias(void)
                             case DXGI_FORMAT_D16_UNORM:
                                 u16 = get_readback_data(&rb, 0, y, 0, sizeof(*u16));
                                 expected_value = depth * 65535.0f + 0.5f;
-                                ok(abs(*u16 - expected_value) <= 1,
+                                all_match = abs(*u16 - expected_value) <= 1;
+                                ok(all_match,
                                         "Got value %#x (%.8e), expected %#x (%.8e).\n",
                                         *u16, *u16 / 65535.0f, expected_value, expected_value / 65535.0f);
                                 break;
@@ -29201,6 +29315,7 @@ START_TEST(d3d11)
     queue_test(test_create_device);
     queue_for_each_feature_level(test_device_interfaces);
     queue_test(test_get_immediate_context);
+    queue_test(test_create_deferred_context);
     queue_test(test_create_texture1d);
     queue_test(test_texture1d_interfaces);
     queue_test(test_create_texture2d);
@@ -29281,7 +29396,7 @@ START_TEST(d3d11)
     queue_test(test_index_buffer_offset);
     queue_test(test_face_culling);
     queue_test(test_line_antialiasing_blending);
-    queue_for_each_feature_level(test_required_format_support);
+    queue_for_each_feature_level(test_format_support);
     queue_for_each_9_x_feature_level(test_fl9_draw);
     queue_test(test_ddy);
     queue_test(test_shader_input_registers_limits);

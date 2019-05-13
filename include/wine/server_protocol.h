@@ -640,55 +640,72 @@ typedef union
     } create_thread;
 } apc_result_t;
 
+enum irp_type
+{
+    IRP_CALL_NONE,
+    IRP_CALL_CREATE,
+    IRP_CALL_CLOSE,
+    IRP_CALL_READ,
+    IRP_CALL_WRITE,
+    IRP_CALL_FLUSH,
+    IRP_CALL_IOCTL,
+    IRP_CALL_FREE
+};
+
 typedef union
 {
-    unsigned int         major;
+    enum irp_type        type;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         unsigned int     access;
         unsigned int     sharing;
         unsigned int     options;
         client_ptr_t     device;
+        obj_handle_t     file;
     } create;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         int              __pad;
         client_ptr_t     file;
     } close;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         unsigned int     key;
+        data_size_t      out_size;
+        int              __pad;
         client_ptr_t     file;
         file_pos_t       pos;
     } read;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         unsigned int     key;
         client_ptr_t     file;
         file_pos_t       pos;
     } write;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         int              __pad;
         client_ptr_t     file;
     } flush;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         ioctl_code_t     code;
+        data_size_t      out_size;
+        int              __pad;
         client_ptr_t     file;
     } ioctl;
     struct
     {
-        unsigned int     major;
+        enum irp_type    type;
         int              __pad;
         client_ptr_t     obj;
-    } cleanup;
+    } free;
 } irp_params_t;
 
 
@@ -714,6 +731,7 @@ typedef struct
     unsigned int   file_size;
     unsigned int   checksum;
     cpu_type_t     cpu;
+    int            __pad;
 } pe_image_info_t;
 #define IMAGE_FLAGS_ComPlusNativeReady        0x01
 #define IMAGE_FLAGS_ComPlusILOnly             0x02
@@ -3411,7 +3429,6 @@ struct set_irp_result_request
     obj_handle_t handle;
     unsigned int status;
     data_size_t  size;
-    client_ptr_t file_ptr;
     /* VARARG(data,bytes); */
 };
 struct set_irp_result_reply
@@ -5244,8 +5261,8 @@ struct get_next_device_request_reply
     thread_id_t  client_tid;
     client_ptr_t client_thread;
     data_size_t  in_size;
-    data_size_t  out_size;
     /* VARARG(next_data,bytes); */
+    char __pad_60[4];
 };
 
 
@@ -6677,6 +6694,6 @@ union generic_reply
     struct resume_process_reply resume_process_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 579
+#define SERVER_PROTOCOL_VERSION 583
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

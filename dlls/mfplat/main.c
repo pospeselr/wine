@@ -70,6 +70,8 @@ static const WCHAR categories_keyW[] = {'M','e','d','i','a','F','o','u','n','d',
                                  'C','a','t','e','g','o','r','i','e','s',0};
 static const WCHAR inputtypesW[]  = {'I','n','p','u','t','T','y','p','e','s',0};
 static const WCHAR outputtypesW[] = {'O','u','t','p','u','t','T','y','p','e','s',0};
+static const WCHAR attributesW[] = {'A','t','t','r','i','b','u','t','e','s',0};
+static const WCHAR mftflagsW[] = {'M','F','T','F','l','a','g','s',0};
 static const WCHAR szGUIDFmt[] =
 {
     '%','0','8','x','-','%','0','4','x','-','%','0','4','x','-','%','0',
@@ -166,46 +168,71 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     return TRUE;
 }
 
-static HRESULT register_transform(CLSID *clsid, WCHAR *name,
-                                  UINT32 cinput, MFT_REGISTER_TYPE_INFO *input_types,
-                                  UINT32 coutput, MFT_REGISTER_TYPE_INFO *output_types)
+static HRESULT register_transform(const CLSID *clsid, const WCHAR *name, UINT32 flags,
+        UINT32 cinput, const MFT_REGISTER_TYPE_INFO *input_types, UINT32 coutput,
+        const MFT_REGISTER_TYPE_INFO *output_types, IMFAttributes *attributes)
 {
     static const WCHAR reg_format[] = {'%','s','\\','%','s',0};
+    HRESULT hr = S_OK;
     HKEY hclsid = 0;
     WCHAR buffer[64];
-    DWORD size;
+    DWORD size, ret;
     WCHAR str[250];
+    UINT8 *blob;
 
     GUIDToString(buffer, clsid);
     sprintfW(str, reg_format, transform_keyW, buffer);
 
-    if (RegCreateKeyW(HKEY_CLASSES_ROOT, str, &hclsid))
-        return E_FAIL;
+    if ((ret = RegCreateKeyW(HKEY_CLASSES_ROOT, str, &hclsid)))
+        hr = HRESULT_FROM_WIN32(ret);
 
-    size = (strlenW(name) + 1) * sizeof(WCHAR);
-    if (RegSetValueExW(hclsid, NULL, 0, REG_SZ, (BYTE *)name, size))
-        goto err;
+    if (SUCCEEDED(hr))
+    {
+        size = (strlenW(name) + 1) * sizeof(WCHAR);
+        if ((ret = RegSetValueExW(hclsid, NULL, 0, REG_SZ, (BYTE *)name, size)))
+            hr = HRESULT_FROM_WIN32(ret);
+    }
 
-    if (cinput && input_types)
+    if (SUCCEEDED(hr) && cinput && input_types)
     {
         size = cinput * sizeof(MFT_REGISTER_TYPE_INFO);
-        if (RegSetValueExW(hclsid, inputtypesW, 0, REG_BINARY, (BYTE *)input_types, size))
-            goto err;
+        if ((ret = RegSetValueExW(hclsid, inputtypesW, 0, REG_BINARY, (BYTE *)input_types, size)))
+            hr = HRESULT_FROM_WIN32(ret);
     }
 
-    if (coutput && output_types)
+    if (SUCCEEDED(hr) && coutput && output_types)
     {
         size = coutput * sizeof(MFT_REGISTER_TYPE_INFO);
-        if (RegSetValueExW(hclsid, outputtypesW, 0, REG_BINARY, (BYTE *)output_types, size))
-            goto err;
+        if ((ret = RegSetValueExW(hclsid, outputtypesW, 0, REG_BINARY, (BYTE *)output_types, size)))
+            hr = HRESULT_FROM_WIN32(ret);
+    }
+
+    if (SUCCEEDED(hr) && attributes)
+    {
+        if (SUCCEEDED(hr = MFGetAttributesAsBlobSize(attributes, &size)))
+        {
+            if ((blob = heap_alloc(size)))
+            {
+                if (SUCCEEDED(hr = MFGetAttributesAsBlob(attributes, blob, size)))
+                {
+                    if ((ret = RegSetValueExW(hclsid, attributesW, 0, REG_BINARY, blob, size)))
+                        hr = HRESULT_FROM_WIN32(ret);
+                }
+                heap_free(blob);
+            }
+            else
+                hr = E_OUTOFMEMORY;
+        }
+    }
+
+    if (SUCCEEDED(hr) && flags)
+    {
+        if ((ret = RegSetValueExW(hclsid, mftflagsW, 0, REG_DWORD, (BYTE *)&flags, sizeof(flags))))
+            hr = HRESULT_FROM_WIN32(ret);
     }
 
     RegCloseKey(hclsid);
-    return S_OK;
-
-err:
-    RegCloseKey(hclsid);
-    return E_FAIL;
+    return hr;
 }
 
 static HRESULT register_category(CLSID *clsid, GUID *category)
@@ -236,17 +263,10 @@ HRESULT WINAPI MFTRegister(CLSID clsid, GUID category, LPWSTR name, UINT32 flags
 {
     HRESULT hr;
 
-    TRACE("(%s, %s, %s, %x, %u, %p, %u, %p, %p)\n", debugstr_guid(&clsid), debugstr_guid(&category),
-                                                    debugstr_w(name), flags, cinput, input_types,
-                                                    coutput, output_types, attributes);
+    TRACE("%s, %s, %s, %#x, %u, %p, %u, %p, %p.\n", debugstr_guid(&clsid), debugstr_guid(&category),
+            debugstr_w(name), flags, cinput, input_types, coutput, output_types, attributes);
 
-    if (attributes)
-        FIXME("attributes not yet supported.\n");
-
-    if (flags)
-        FIXME("flags not yet supported.\n");
-
-    hr = register_transform(&clsid, name, cinput, input_types, coutput, output_types);
+    hr = register_transform(&clsid, name, flags, cinput, input_types, coutput, output_types, attributes);
     if(FAILED(hr))
         ERR("Failed to write register transform\n");
 
@@ -556,14 +576,24 @@ const char *debugstr_attr(const GUID *guid)
     {
 #define X(g) { &(g), #g }
         X(MF_READWRITE_MMCSS_CLASS),
+        X(MF_TOPONODE_MARKIN_HERE),
+        X(MF_TOPONODE_MARKOUT_HERE),
+        X(MF_TOPONODE_DECODER),
+        X(MF_TOPOLOGY_PROJECTSTART),
+        X(MF_TOPOLOGY_PROJECTSTOP),
         X(MF_SINK_WRITER_ENCODER_CONFIG),
+        X(MF_TOPOLOGY_NO_MARKIN_MARKOUT),
         X(MF_SOURCE_READER_ENABLE_TRANSCODE_ONLY_TRANSFORMS),
+        X(MF_TOPOLOGY_DYNAMIC_CHANGE_NOT_ALLOWED),
         X(MF_MT_ALPHA_MODE),
+        X(MF_TOPOLOGY_PLAYBACK_MAX_DIMS),
         X(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS),
         X(MF_MT_PIXEL_ASPECT_RATIO),
+        X(MF_TOPOLOGY_ENABLE_XVP_FOR_PLAYBACK),
         X(MF_MT_WRAPPED_TYPE),
         X(MF_MT_AVG_BITRATE),
         X(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_MAX_BUFFERS),
         X(MF_MT_AUDIO_BLOCK_ALIGNMENT),
         X(MF_PD_PMPHOST_CONTEXT),
         X(MF_PD_APP_CONTEXT),
@@ -580,22 +610,32 @@ const char *debugstr_attr(const GUID *guid)
         X(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING),
         X(MF_MT_FRAME_SIZE),
         X(MF_SINK_WRITER_ASYNC_CALLBACK),
+        X(MF_TOPOLOGY_START_TIME_ON_PRESENTATION_SWITCH),
+        X(MF_TOPONODE_WORKQUEUE_MMCSS_PRIORITY),
         X(MF_MT_FRAME_RATE_RANGE_MAX),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_PROVIDER_DEVICE_ID),
+        X(MF_TOPOLOGY_STATIC_PLAYBACK_OPTIMIZATIONS),
         X(MF_MT_AUDIO_FLOAT_SAMPLES_PER_SECOND),
         X(MFSampleExtension_ForwardedDecodeUnits),
         X(MF_EVENT_SOURCE_TOPOLOGY_CANCELED),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ENDPOINT_ID),
+        X(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME),
         X(MF_MT_VIDEO_ROTATION),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_SYMBOLIC_LINK),
         X(MF_MT_USER_DATA),
         X(MF_EVENT_STREAM_METADATA_SYSTEMID),
         X(MF_MT_AUDIO_CHANNEL_MASK),
         X(MF_SOURCE_READER_DISCONNECT_MEDIASOURCE_ON_SHUTDOWN),
         X(MF_READWRITE_DISABLE_CONVERTERS),
         X(MFSampleExtension_Token),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_CATEGORY),
         X(MF_MT_AUDIO_VALID_BITS_PER_SAMPLE),
+        X(MF_TOPOLOGY_ENUMERATE_SOURCE_TYPES),
         X(MF_MT_VIDEO_NO_FRAME_ORDERING),
         X(MFSampleExtension_3DVideo_SampleFormat),
         X(MF_MT_SAMPLE_SIZE),
         X(MF_MT_AAC_PAYLOAD_TIME),
+        X(MF_TOPOLOGY_PLAYBACK_FRAMERATE),
         X(MF_SOURCE_READER_D3D11_BIND_FLAGS),
         X(MF_MT_AUDIO_FOLDDOWN_MATRIX),
         X(MF_MT_AUDIO_WMADRC_PEAKREF),
@@ -619,20 +659,26 @@ const char *debugstr_attr(const GUID *guid)
         X(MF_BYTESTREAM_IFO_FILE_URI),
         X(MF_EVENT_TOPOLOGY_STATUS),
         X(MF_BYTESTREAM_DLNA_PROFILE_ID),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ROLE),
         X(MF_MT_MAJOR_TYPE),
         X(MF_EVENT_SOURCE_CHARACTERISTICS),
         X(MF_EVENT_SOURCE_CHARACTERISTICS_OLD),
         X(MF_MT_VIDEO_3D_FIRST_IS_LEFT),
         X(MF_PD_ADAPTIVE_STREAMING),
         X(MFSampleExtension_Timestamp),
+        X(MF_TOPONODE_PRIMARYOUTPUT),
         X(MF_MT_SUBTYPE),
+        X(MF_TOPONODE_STREAMID),
+        X(MF_TOPONODE_NOSHUTDOWN_ON_REMOVE),
         X(MF_SD_MUTUALLY_EXCLUSIVE),
         X(MF_SD_STREAM_NAME),
+        X(MF_TOPONODE_RATELESS),
         X(MF_EVENT_STREAM_METADATA_CONTENT_KEYIDS),
+        X(MF_TOPONODE_DISABLE_PREROLL),
         X(MF_MT_VIDEO_3D_FORMAT),
         X(MF_EVENT_STREAM_METADATA_KEYDATA),
-        X(MF_SINK_WRITER_D3D_MANAGER),
         X(MF_SOURCE_READER_D3D_MANAGER),
+        X(MF_SINK_WRITER_D3D_MANAGER),
         X(MFSampleExtension_3DVideo),
         X(MF_EVENT_SOURCE_FAKE_START),
         X(MF_EVENT_SOURCE_PROJECTSTART),
@@ -644,10 +690,14 @@ const char *debugstr_attr(const GUID *guid)
         X(MF_EVENT_SCRUBSAMPLE_TIME),
         X(MF_MT_INTERLACE_MODE),
         X(MF_MT_VIDEO_RENDERER_EXTENSION_PROFILE),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_HW_SOURCE),
         X(MF_MT_AUDIO_PREFER_WAVEFORMATEX),
+        X(MF_TOPONODE_WORKQUEUE_ITEM_PRIORITY),
         X(MFSampleExtension_ForwardedDecodeUnitType),
         X(MF_MT_AUDIO_AVG_BYTES_PER_SECOND),
         X(MF_SOURCE_READER_MEDIASOURCE_CHARACTERISTICS),
+        X(MF_TOPONODE_TRANSFORM_OBJECTID),
+        X(MF_DEVSOURCE_ATTRIBUTE_MEDIA_TYPE),
         X(MF_EVENT_MFT_INPUT_STREAM_ID),
         X(MF_READWRITE_MMCSS_PRIORITY),
         X(MF_MT_VIDEO_3D),
@@ -659,24 +709,48 @@ const char *debugstr_attr(const GUID *guid)
         X(MFSampleExtension_DecodeTimestamp),
         X(MF_MT_VIDEO_H264_NO_FMOASO),
         X(MF_SINK_WRITER_DISABLE_THROTTLING),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK),
         X(MF_READWRITE_D3D_OPTIONAL),
         X(MF_READWRITE_MMCSS_CLASS_AUDIO),
         X(MF_SOURCE_READER_DISABLE_CAMERA_PLUGINS),
+        X(MF_TOPOLOGY_RESOLUTION_STATUS),
         X(MF_PD_AUDIO_ISVARIABLEBITRATE),
         X(MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION),
         X(MF_MT_AUDIO_SAMPLES_PER_SECOND),
         X(MF_MT_FRAME_RATE),
+        X(MF_TOPONODE_FLUSH),
+        X(MF_TOPONODE_DRAIN),
+        X(MF_TOPONODE_MEDIASTART),
+        X(MF_TOPONODE_MEDIASTOP),
         X(MF_SOURCE_READER_MEDIASOURCE_CONFIG),
+        X(MF_TOPONODE_SOURCE),
+        X(MF_TOPONODE_PRESENTATION_DESCRIPTOR),
+        X(MF_TOPONODE_D3DAWARE),
         X(MF_MT_COMPRESSED),
+        X(MF_TOPONODE_STREAM_DESCRIPTOR),
+        X(MF_TOPONODE_ERRORCODE),
+        X(MF_TOPONODE_SEQUENCE_ELEMENTID),
         X(MF_EVENT_MFT_CONTEXT),
         X(MF_MT_FORWARD_CUSTOM_SEI),
+        X(MF_TOPONODE_CONNECT_METHOD),
         X(MF_MT_DEPTH_VALUE_UNIT),
         X(MF_MT_AUDIO_NUM_CHANNELS),
+        X(MF_TOPOLOGY_DXVA_MODE),
+        X(MF_TOPONODE_LOCKED),
+        X(MF_TOPONODE_WORKQUEUE_ID),
+        X(MF_TOPONODE_WORKQUEUE_MMCSS_CLASS),
+        X(MF_TOPONODE_DECRYPTOR),
         X(MF_EVENT_DO_THINNING),
+        X(MF_TOPONODE_DISCARDABLE),
+        X(MF_TOPOLOGY_HARDWARE_MODE),
         X(MF_SOURCE_READER_DISABLE_DXVA),
         X(MF_MT_FORWARD_CUSTOM_NALU),
+        X(MF_TOPONODE_ERROR_MAJORTYPE),
         X(MF_MT_SECURE),
+        X(MF_TOPONODE_ERROR_SUBTYPE),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE),
         X(MF_MT_VIDEO_3D_LEFT_IS_BASE),
+        X(MF_TOPONODE_WORKQUEUE_MMCSS_TASKID),
 #undef X
     };
     struct guid_def *ret = NULL;
@@ -706,6 +780,7 @@ const char *debugstr_mf_guid(const GUID *guid)
         X(MFVideoFormat_RGB32),
         X(MFVideoFormat_RGB565),
         X(MFVideoFormat_RGB555),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_GUID),
         X(MFVideoFormat_A2R10G10B10),
         X(MFMediaType_Script),
         X(MFMediaType_Image),
@@ -789,6 +864,7 @@ const char *debugstr_mf_guid(const GUID *guid)
         X(MFVideoFormat_v410),
         X(MFMediaType_Video),
         X(MFAudioFormat_AAC_HDCP),
+        X(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID),
         X(MFAudioFormat_Dolby_AC3_HDCP),
         X(MFMediaType_Subtitle),
         X(MFMediaType_Stream),
@@ -1621,7 +1697,7 @@ static HRESULT WINAPI mfattributes_CompareItem(IMFAttributes *iface, REFGUID key
 {
     struct attributes *attributes = impl_from_IMFAttributes(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(attributes, key, value, result);
 }
@@ -1741,7 +1817,7 @@ static HRESULT WINAPI mfattributes_SetItem(IMFAttributes *iface, REFGUID key, RE
 {
     struct attributes *attributes = impl_from_IMFAttributes(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(attributes, key, value);
 }
@@ -2592,25 +2668,51 @@ static HRESULT WINAPI mfbytestream_SetCurrentPosition(IMFByteStream *iface, QWOR
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI mfbytestream_IsEndOfStream(IMFByteStream *iface, BOOL *endstream)
+static HRESULT WINAPI bytestream_file_IsEndOfStream(IMFByteStream *iface, BOOL *ret)
 {
-    mfbytestream *This = impl_from_IMFByteStream(iface);
+    struct bytestream *stream = impl_from_IMFByteStream(iface);
+    LARGE_INTEGER position, length;
+    HRESULT hr = S_OK;
 
-    FIXME("%p, %p\n", This, endstream);
+    TRACE("%p, %p.\n", iface, ret);
 
-    if(endstream)
-        *endstream = TRUE;
+    EnterCriticalSection(&stream->cs);
 
-    return S_OK;
+    position.QuadPart = 0;
+    if (SetFilePointerEx(stream->hfile, position, &length, FILE_END))
+        *ret = stream->position >= length.QuadPart;
+    else
+        hr = HRESULT_FROM_WIN32(GetLastError());
+
+    LeaveCriticalSection(&stream->cs);
+
+    return hr;
 }
 
-static HRESULT WINAPI mfbytestream_Read(IMFByteStream *iface, BYTE *data, ULONG count, ULONG *byte_read)
+static HRESULT WINAPI bytestream_file_Read(IMFByteStream *iface, BYTE *buffer, ULONG size, ULONG *read_len)
 {
-    mfbytestream *This = impl_from_IMFByteStream(iface);
+    struct bytestream *stream = impl_from_IMFByteStream(iface);
+    LARGE_INTEGER position;
+    HRESULT hr = S_OK;
+    BOOL ret;
 
-    FIXME("%p, %p, %u, %p\n", This, data, count, byte_read);
+    TRACE("%p, %p, %u, %p.\n", iface, buffer, size, read_len);
 
-    return E_NOTIMPL;
+    EnterCriticalSection(&stream->cs);
+
+    position.QuadPart = stream->position;
+    if ((ret = SetFilePointerEx(stream->hfile, position, NULL, FILE_BEGIN)))
+    {
+        if ((ret = ReadFile(stream->hfile, buffer, size, read_len, NULL)))
+            stream->position += *read_len;
+    }
+
+    if (!ret)
+        hr = HRESULT_FROM_WIN32(GetLastError());
+
+    LeaveCriticalSection(&stream->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI bytestream_BeginRead(IMFByteStream *iface, BYTE *data, ULONG size, IMFAsyncCallback *callback,
@@ -2688,7 +2790,7 @@ static HRESULT WINAPI mfbytestream_Close(IMFByteStream *iface)
     return E_NOTIMPL;
 }
 
-static const IMFByteStreamVtbl mfbytestream_vtbl =
+static const IMFByteStreamVtbl bytestream_file_vtbl =
 {
     bytestream_QueryInterface,
     bytestream_AddRef,
@@ -2698,8 +2800,8 @@ static const IMFByteStreamVtbl mfbytestream_vtbl =
     mfbytestream_SetLength,
     mfbytestream_GetCurrentPosition,
     mfbytestream_SetCurrentPosition,
-    mfbytestream_IsEndOfStream,
-    mfbytestream_Read,
+    bytestream_file_IsEndOfStream,
+    bytestream_file_Read,
     bytestream_BeginRead,
     bytestream_EndRead,
     mfbytestream_Write,
@@ -2730,11 +2832,18 @@ static HRESULT WINAPI bytestream_stream_SetLength(IMFByteStream *iface, QWORD le
 {
     struct bytestream *stream = impl_from_IMFByteStream(iface);
     ULARGE_INTEGER size;
+    HRESULT hr;
 
     TRACE("%p, %s.\n", iface, wine_dbgstr_longlong(length));
 
+    EnterCriticalSection(&stream->cs);
+
     size.QuadPart = length;
-    return IStream_SetSize(stream->stream, size);
+    hr = IStream_SetSize(stream->stream, size);
+
+    LeaveCriticalSection(&stream->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI bytestream_stream_GetCurrentPosition(IMFByteStream *iface, QWORD *position)
@@ -2754,7 +2863,9 @@ static HRESULT WINAPI bytestream_stream_SetCurrentPosition(IMFByteStream *iface,
 
     TRACE("%p, %s.\n", iface, wine_dbgstr_longlong(position));
 
+    EnterCriticalSection(&stream->cs);
     stream->position = position;
+    LeaveCriticalSection(&stream->cs);
 
     return S_OK;
 }
@@ -2767,12 +2878,14 @@ static HRESULT WINAPI bytestream_stream_IsEndOfStream(IMFByteStream *iface, BOOL
 
     TRACE("%p, %p.\n", iface, ret);
 
-    if (FAILED(hr = IStream_Stat(stream->stream, &statstg, STATFLAG_NONAME)))
-        return hr;
+    EnterCriticalSection(&stream->cs);
 
-    *ret = stream->position >= statstg.cbSize.QuadPart;
+    if (SUCCEEDED(hr = IStream_Stat(stream->stream, &statstg, STATFLAG_NONAME)))
+        *ret = stream->position >= statstg.cbSize.QuadPart;
 
-    return S_OK;
+    LeaveCriticalSection(&stream->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI bytestream_stream_Read(IMFByteStream *iface, BYTE *buffer, ULONG size, ULONG *read_len)
@@ -2783,12 +2896,16 @@ static HRESULT WINAPI bytestream_stream_Read(IMFByteStream *iface, BYTE *buffer,
 
     TRACE("%p, %p, %u, %p.\n", iface, buffer, size, read_len);
 
-    position.QuadPart = stream->position;
-    if (FAILED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
-        return hr;
+    EnterCriticalSection(&stream->cs);
 
-    if (SUCCEEDED(hr = IStream_Read(stream->stream, buffer, size, read_len)))
-        stream->position += *read_len;
+    position.QuadPart = stream->position;
+    if (SUCCEEDED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
+    {
+        if (SUCCEEDED(hr = IStream_Read(stream->stream, buffer, size, read_len)))
+            stream->position += *read_len;
+    }
+
+    LeaveCriticalSection(&stream->cs);
 
     return hr;
 }
@@ -2801,12 +2918,16 @@ static HRESULT WINAPI bytestream_stream_Write(IMFByteStream *iface, const BYTE *
 
     TRACE("%p, %p, %u, %p.\n", iface, buffer, size, written);
 
-    position.QuadPart = stream->position;
-    if (FAILED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
-        return hr;
+    EnterCriticalSection(&stream->cs);
 
-    if (SUCCEEDED(hr = IStream_Write(stream->stream, buffer, size, written)))
-        stream->position += *written;
+    position.QuadPart = stream->position;
+    if (SUCCEEDED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
+    {
+        if (SUCCEEDED(hr = IStream_Write(stream->stream, buffer, size, written)))
+            stream->position += *written;
+    }
+
+    LeaveCriticalSection(&stream->cs);
 
     return hr;
 }
@@ -2815,8 +2936,11 @@ static HRESULT WINAPI bytestream_stream_Seek(IMFByteStream *iface, MFBYTESTREAM_
         DWORD flags, QWORD *current)
 {
     struct bytestream *stream = impl_from_IMFByteStream(iface);
+    HRESULT hr = S_OK;
 
     TRACE("%p, %u, %s, %#x, %p.\n", iface, origin, wine_dbgstr_longlong(offset), flags, current);
+
+    EnterCriticalSection(&stream->cs);
 
     switch (origin)
     {
@@ -2828,12 +2952,14 @@ static HRESULT WINAPI bytestream_stream_Seek(IMFByteStream *iface, MFBYTESTREAM_
             break;
         default:
             WARN("Unknown origin mode %d.\n", origin);
-            return E_INVALIDARG;
+            hr = E_INVALIDARG;
     }
 
     *current = stream->position;
 
-    return S_OK;
+    LeaveCriticalSection(&stream->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI bytestream_stream_Flush(IMFByteStream *iface)
@@ -2948,6 +3074,8 @@ static HRESULT WINAPI bytestream_stream_read_callback_Invoke(IMFAsyncCallback *i
 
     op = impl_async_stream_op_from_IUnknown(object);
 
+    EnterCriticalSection(&stream->cs);
+
     position.QuadPart = op->position;
     if (SUCCEEDED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
     {
@@ -2956,9 +3084,8 @@ static HRESULT WINAPI bytestream_stream_read_callback_Invoke(IMFAsyncCallback *i
     }
 
     IMFAsyncResult_SetStatus(op->caller, hr);
-
-    EnterCriticalSection(&stream->cs);
     list_add_tail(&stream->pending, &op->entry);
+
     LeaveCriticalSection(&stream->cs);
 
     MFInvokeCallback(op->caller);
@@ -2979,6 +3106,8 @@ static HRESULT WINAPI bytestream_stream_write_callback_Invoke(IMFAsyncCallback *
 
     op = impl_async_stream_op_from_IUnknown(object);
 
+    EnterCriticalSection(&stream->cs);
+
     position.QuadPart = op->position;
     if (SUCCEEDED(hr = IStream_Seek(stream->stream, position, STREAM_SEEK_SET, NULL)))
     {
@@ -2987,9 +3116,8 @@ static HRESULT WINAPI bytestream_stream_write_callback_Invoke(IMFAsyncCallback *
     }
 
     IMFAsyncResult_SetStatus(op->caller, hr);
-
-    EnterCriticalSection(&stream->cs);
     list_add_tail(&stream->pending, &op->entry);
+
     LeaveCriticalSection(&stream->cs);
 
     MFInvokeCallback(op->caller);
@@ -3127,16 +3255,14 @@ HRESULT WINAPI MFCreateFile(MF_FILE_ACCESSMODE accessmode, MF_FILE_OPENMODE open
                             LPCWSTR url, IMFByteStream **bytestream)
 {
     DWORD capabilities = MFBYTESTREAM_IS_SEEKABLE | MFBYTESTREAM_DOES_NOT_USE_NETWORK;
-    struct bytestream *object;
-    DWORD fileaccessmode = 0;
+    DWORD filecreation_disposition = 0, fileaccessmode = 0, fileattributes = 0;
     DWORD filesharemode = FILE_SHARE_READ;
-    DWORD filecreation_disposition = 0;
-    DWORD fileattributes = 0;
+    struct bytestream *object;
     FILETIME writetime;
     HANDLE file;
     HRESULT hr;
 
-    FIXME("(%d, %d, %d, %s, %p): stub\n", accessmode, openmode, flags, debugstr_w(url), bytestream);
+    TRACE("%d, %d, %#x, %s, %p.\n", accessmode, openmode, flags, debugstr_w(url), bytestream);
 
     switch (accessmode)
     {
@@ -3197,7 +3323,7 @@ HRESULT WINAPI MFCreateFile(MF_FILE_ACCESSMODE accessmode, MF_FILE_OPENMODE open
         heap_free(object);
         return hr;
     }
-    object->IMFByteStream_iface.lpVtbl = &mfbytestream_vtbl;
+    object->IMFByteStream_iface.lpVtbl = &bytestream_file_vtbl;
     object->attributes.IMFAttributes_iface.lpVtbl = &mfbytestream_attributes_vtbl;
     object->IMFGetService_iface.lpVtbl = &bytestream_file_getservice_vtbl;
     object->read_callback.lpVtbl = &bytestream_file_read_callback_vtbl;
@@ -3753,11 +3879,12 @@ static HRESULT WINAPI bytestream_wrapper_events_EndGetEvent(IMFMediaEventGenerat
     return IMFMediaEventGenerator_EndGetEvent(wrapper->event_generator, result, event);
 }
 
-static HRESULT WINAPI bytestream_wrapper_events_QueueEvent(IMFMediaEventGenerator *iface, MediaEventType type, REFGUID ext_type, HRESULT hr, const PROPVARIANT *value)
+static HRESULT WINAPI bytestream_wrapper_events_QueueEvent(IMFMediaEventGenerator *iface, MediaEventType type,
+        REFGUID ext_type, HRESULT hr, const PROPVARIANT *value)
 {
     struct bytestream_wrapper *wrapper = impl_wrapper_from_IMFMediaEventGenerator(iface);
 
-    TRACE("%p, %d, %s, %#x, %p.\n", iface, type, debugstr_guid(ext_type), hr, value);
+    TRACE("%p, %d, %s, %#x, %s.\n", iface, type, debugstr_guid(ext_type), hr, debugstr_propvar(value));
 
     return IMFMediaEventGenerator_QueueEvent(wrapper->event_generator, type, ext_type, hr, value);
 }
@@ -3874,11 +4001,12 @@ static HRESULT WINAPI bytestream_wrapper_propstore_GetValue(IPropertyStore *ifac
     return IPropertyStore_GetValue(wrapper->propstore, key, value);
 }
 
-static HRESULT WINAPI bytestream_wrapper_propstore_SetValue(IPropertyStore *iface, REFPROPERTYKEY key, const PROPVARIANT *value)
+static HRESULT WINAPI bytestream_wrapper_propstore_SetValue(IPropertyStore *iface, REFPROPERTYKEY key,
+        const PROPVARIANT *value)
 {
     struct bytestream_wrapper *wrapper = impl_wrapper_from_IPropertyStore(iface);
 
-    TRACE("%p, %p, %p.\n", iface, key, value);
+    TRACE("%p, %p, %s.\n", iface, key, debugstr_propvar(value));
 
     return IPropertyStore_SetValue(wrapper->propstore, key, value);
 }
@@ -3940,11 +4068,12 @@ static HRESULT WINAPI bytestream_wrapper_attributes_GetItemType(IMFAttributes *i
     return IMFAttributes_GetItemType(wrapper->attributes, key, type);
 }
 
-static HRESULT WINAPI bytestream_wrapper_attributes_CompareItem(IMFAttributes *iface, REFGUID key, REFPROPVARIANT value, BOOL *result)
+static HRESULT WINAPI bytestream_wrapper_attributes_CompareItem(IMFAttributes *iface, REFGUID key,
+        REFPROPVARIANT value, BOOL *result)
 {
     struct bytestream_wrapper *wrapper = impl_wrapper_from_IMFAttributes(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return IMFAttributes_CompareItem(wrapper->attributes, key, value, result);
 }
@@ -4064,7 +4193,7 @@ static HRESULT WINAPI bytestream_wrapper_attributes_SetItem(IMFAttributes *iface
 {
     struct bytestream_wrapper *wrapper = impl_wrapper_from_IMFAttributes(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return IMFAttributes_SetItem(wrapper->attributes, key, value);
 }
@@ -4914,12 +5043,46 @@ static HRESULT resolver_get_bytestream_handler(IMFByteStream *stream, const WCHA
     return hr;
 }
 
-static HRESULT resolver_get_scheme_handler(const WCHAR *url, DWORD flags, IMFSchemeHandler **handler)
+static HRESULT resolver_create_scheme_handler(const WCHAR *scheme, DWORD flags, IMFSchemeHandler **handler)
 {
     static const char schemehandlerspath[] = "Software\\Microsoft\\Windows Media Foundation\\SchemeHandlers";
     static const HKEY hkey_roots[2] = { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE };
+    unsigned int i;
+    HRESULT hr;
+
+    TRACE("%s, %#x, %p.\n", debugstr_w(scheme), flags, handler);
+
+    /* FIXME: check local handlers first */
+
+    for (i = 0; i < ARRAY_SIZE(hkey_roots); ++i)
+    {
+        HKEY hkey, hkey_handler;
+
+        hr = MF_E_UNSUPPORTED_SCHEME;
+
+        if (RegOpenKeyA(hkey_roots[i], schemehandlerspath, &hkey))
+            continue;
+
+        if (!RegOpenKeyW(hkey, scheme, &hkey_handler))
+        {
+            hr = resolver_create_registered_handler(hkey_handler, &IID_IMFSchemeHandler, (void **)handler);
+            RegCloseKey(hkey_handler);
+        }
+
+        RegCloseKey(hkey);
+
+        if (SUCCEEDED(hr))
+            break;
+    }
+
+    return hr;
+}
+
+static HRESULT resolver_get_scheme_handler(const WCHAR *url, DWORD flags, IMFSchemeHandler **handler)
+{
+    static const WCHAR fileschemeW[] = {'f','i','l','e',':',0};
     const WCHAR *ptr = url;
-    unsigned int len, i;
+    unsigned int len;
     WCHAR *scheme;
     HRESULT hr;
 
@@ -4943,9 +5106,12 @@ static HRESULT resolver_get_scheme_handler(const WCHAR *url, DWORD flags, IMFSch
         ptr++;
     }
 
-    /* Schemes must end with a ':' */
+    /* Schemes must end with a ':', if not found try "file:" */
     if (ptr == url || *ptr != ':')
-        return MF_E_UNSUPPORTED_SCHEME;
+    {
+        url = fileschemeW;
+        ptr = fileschemeW + ARRAY_SIZE(fileschemeW) - 1;
+    }
 
     len = ptr - url;
     scheme = heap_alloc((len + 1) * sizeof(WCHAR));
@@ -4955,26 +5121,9 @@ static HRESULT resolver_get_scheme_handler(const WCHAR *url, DWORD flags, IMFSch
     memcpy(scheme, url, len * sizeof(WCHAR));
     scheme[len] = 0;
 
-    /* FIXME: check local handlers first */
-
-    for (i = 0, hr = E_FAIL; i < ARRAY_SIZE(hkey_roots); ++i)
-    {
-        HKEY hkey, hkey_handler;
-
-        if (RegOpenKeyA(hkey_roots[i], schemehandlerspath, &hkey))
-            continue;
-
-        if (!RegOpenKeyW(hkey, scheme, &hkey_handler))
-        {
-            hr = resolver_create_registered_handler(hkey_handler, &IID_IMFSchemeHandler, (void **)handler);
-            RegCloseKey(hkey_handler);
-        }
-
-        RegCloseKey(hkey);
-
-        if (SUCCEEDED(hr))
-            break;
-    }
+    hr = resolver_create_scheme_handler(scheme, flags, handler);
+    if (FAILED(hr) && url != fileschemeW)
+        hr = resolver_create_scheme_handler(fileschemeW, flags, handler);
 
     heap_free(scheme);
 
@@ -5425,7 +5574,7 @@ static HRESULT WINAPI mfmediaevent_CompareItem(IMFMediaEvent *iface, REFGUID key
 {
     struct media_event *event = impl_from_IMFMediaEvent(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(&event->attributes, key, value, result);
 }
@@ -5546,7 +5695,7 @@ static HRESULT WINAPI mfmediaevent_SetItem(IMFMediaEvent *iface, REFGUID key, RE
 {
     struct media_event *event = impl_from_IMFMediaEvent(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(&event->attributes, key, value);
 }
@@ -5600,7 +5749,7 @@ static HRESULT WINAPI mfmediaevent_SetGUID(IMFMediaEvent *iface, REFGUID key, RE
 {
     struct media_event *event = impl_from_IMFMediaEvent(iface);
 
-    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_guid(value));
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
 
     return attributes_SetGUID(&event->attributes, key, value);
 }
@@ -5763,13 +5912,14 @@ static const IMFMediaEventVtbl mfmediaevent_vtbl =
 /***********************************************************************
  *      MFCreateMediaEvent (mfplat.@)
  */
-HRESULT WINAPI MFCreateMediaEvent(MediaEventType type, REFGUID extended_type, HRESULT status,
-                                  const PROPVARIANT *value, IMFMediaEvent **event)
+HRESULT WINAPI MFCreateMediaEvent(MediaEventType type, REFGUID extended_type, HRESULT status, const PROPVARIANT *value,
+        IMFMediaEvent **event)
 {
     mfmediaevent *object;
     HRESULT hr;
 
-    TRACE("%s, %s, %08x, %p, %p\n", debugstr_eventid(type), debugstr_guid(extended_type), status, value, event);
+    TRACE("%s, %s, %08x, %s, %p\n", debugstr_eventid(type), debugstr_guid(extended_type), status,
+            debugstr_propvar(value), event);
 
     object = HeapAlloc( GetProcessHeap(), 0, sizeof(*object) );
     if(!object)
@@ -6043,7 +6193,8 @@ static HRESULT WINAPI eventqueue_QueueEventParamVar(IMFMediaEventQueue *iface, M
     IMFMediaEvent *event;
     HRESULT hr;
 
-    TRACE("%p, %s, %s, %#x, %p\n", iface, debugstr_eventid(event_type), debugstr_guid(extended_type), status, value);
+    TRACE("%p, %s, %s, %#x, %s\n", iface, debugstr_eventid(event_type), debugstr_guid(extended_type), status,
+            debugstr_propvar(value));
 
     if (FAILED(hr = MFCreateMediaEvent(event_type, extended_type, status, value, &event)))
         return hr;
@@ -6668,4 +6819,261 @@ HRESULT WINAPI MFCreateSystemTimeSource(IMFPresentationTimeSource **time_source)
     *time_source = &object->IMFPresentationTimeSource_iface;
 
     return S_OK;
+}
+
+struct async_create_file
+{
+    IMFAsyncCallback IMFAsyncCallback_iface;
+    LONG refcount;
+    MF_FILE_ACCESSMODE access_mode;
+    MF_FILE_OPENMODE open_mode;
+    MF_FILE_FLAGS flags;
+    WCHAR *path;
+};
+
+struct async_create_file_result
+{
+    struct list entry;
+    IMFAsyncResult *result;
+    IMFByteStream *stream;
+};
+
+static struct list async_create_file_results = LIST_INIT(async_create_file_results);
+static CRITICAL_SECTION async_create_file_cs = { NULL, -1, 0, 0, 0, 0 };
+
+static struct async_create_file *impl_from_create_file_IMFAsyncCallback(IMFAsyncCallback *iface)
+{
+    return CONTAINING_RECORD(iface, struct async_create_file, IMFAsyncCallback_iface);
+}
+
+static HRESULT WINAPI async_create_file_callback_QueryInterface(IMFAsyncCallback *iface, REFIID riid, void **obj)
+{
+    if (IsEqualIID(riid, &IID_IMFAsyncCallback) ||
+            IsEqualIID(riid, &IID_IUnknown))
+    {
+        *obj = iface;
+        IMFAsyncCallback_AddRef(iface);
+        return S_OK;
+    }
+
+    *obj = NULL;
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI async_create_file_callback_AddRef(IMFAsyncCallback *iface)
+{
+    struct async_create_file *async = impl_from_create_file_IMFAsyncCallback(iface);
+    ULONG refcount = InterlockedIncrement(&async->refcount);
+
+    TRACE("%p, refcount %u.\n", iface, refcount);
+
+    return refcount;
+}
+
+static ULONG WINAPI async_create_file_callback_Release(IMFAsyncCallback *iface)
+{
+    struct async_create_file *async = impl_from_create_file_IMFAsyncCallback(iface);
+    ULONG refcount = InterlockedDecrement(&async->refcount);
+
+    TRACE("%p, refcount %u.\n", iface, refcount);
+
+    if (!refcount)
+    {
+        heap_free(async->path);
+        heap_free(async);
+    }
+
+    return refcount;
+}
+
+static HRESULT WINAPI async_create_file_callback_GetParameters(IMFAsyncCallback *iface, DWORD *flags, DWORD *queue)
+{
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI async_create_file_callback_Invoke(IMFAsyncCallback *iface, IMFAsyncResult *result)
+{
+    struct async_create_file *async = impl_from_create_file_IMFAsyncCallback(iface);
+    IMFAsyncResult *caller;
+    IMFByteStream *stream;
+    HRESULT hr;
+
+    caller = (IMFAsyncResult *)IMFAsyncResult_GetStateNoAddRef(result);
+
+    hr = MFCreateFile(async->access_mode, async->open_mode, async->flags, async->path, &stream);
+    if (SUCCEEDED(hr))
+    {
+        struct async_create_file_result *result_item;
+
+        result_item = heap_alloc(sizeof(*result_item));
+        if (result_item)
+        {
+            result_item->result = caller;
+            IMFAsyncResult_AddRef(caller);
+            result_item->stream = stream;
+            IMFByteStream_AddRef(stream);
+
+            EnterCriticalSection(&async_create_file_cs);
+            list_add_tail(&async_create_file_results, &result_item->entry);
+            LeaveCriticalSection(&async_create_file_cs);
+        }
+
+        IMFByteStream_Release(stream);
+    }
+    else
+        IMFAsyncResult_SetStatus(caller, hr);
+
+    MFInvokeCallback(caller);
+
+    return S_OK;
+}
+
+static const IMFAsyncCallbackVtbl async_create_file_callback_vtbl =
+{
+    async_create_file_callback_QueryInterface,
+    async_create_file_callback_AddRef,
+    async_create_file_callback_Release,
+    async_create_file_callback_GetParameters,
+    async_create_file_callback_Invoke,
+};
+
+static WCHAR *heap_strdupW(const WCHAR *str)
+{
+    WCHAR *ret = NULL;
+
+    if (str)
+    {
+        unsigned int size;
+
+        size = (strlenW(str) + 1) * sizeof(WCHAR);
+        ret = heap_alloc(size);
+        if (ret)
+            memcpy(ret, str, size);
+    }
+
+    return ret;
+}
+
+/***********************************************************************
+ *      MFBeginCreateFile (mfplat.@)
+ */
+HRESULT WINAPI MFBeginCreateFile(MF_FILE_ACCESSMODE access_mode, MF_FILE_OPENMODE open_mode, MF_FILE_FLAGS flags,
+        const WCHAR *path, IMFAsyncCallback *callback, IUnknown *state, IUnknown **cancel_cookie)
+{
+    struct async_create_file *async = NULL;
+    IMFAsyncResult *caller, *item = NULL;
+    HRESULT hr;
+
+    TRACE("%#x, %#x, %#x, %s, %p, %p, %p.\n", access_mode, open_mode, flags, debugstr_w(path), callback, state,
+            cancel_cookie);
+
+    if (cancel_cookie)
+        *cancel_cookie = NULL;
+
+    if (FAILED(hr = MFCreateAsyncResult(NULL, callback, state, &caller)))
+        return hr;
+
+    async = heap_alloc(sizeof(*async));
+    if (!async)
+    {
+        hr = E_OUTOFMEMORY;
+        goto failed;
+    }
+
+    async->IMFAsyncCallback_iface.lpVtbl = &async_create_file_callback_vtbl;
+    async->refcount = 1;
+    async->access_mode = access_mode;
+    async->open_mode = open_mode;
+    async->flags = flags;
+    async->path = heap_strdupW(path);
+    if (!async->path)
+    {
+        hr = E_OUTOFMEMORY;
+        goto failed;
+    }
+
+    hr = MFCreateAsyncResult(NULL, &async->IMFAsyncCallback_iface, (IUnknown *)caller, &item);
+    if (FAILED(hr))
+        goto failed;
+
+    if (cancel_cookie)
+    {
+        *cancel_cookie = (IUnknown *)caller;
+        IUnknown_AddRef(*cancel_cookie);
+    }
+
+    hr = MFInvokeCallback(item);
+
+failed:
+    if (async)
+        IMFAsyncCallback_Release(&async->IMFAsyncCallback_iface);
+    if (item)
+        IMFAsyncResult_Release(item);
+    if (caller)
+        IMFAsyncResult_Release(caller);
+
+    return hr;
+}
+
+static HRESULT async_create_file_pull_result(IUnknown *unk, IMFByteStream **stream)
+{
+    struct async_create_file_result *item;
+    HRESULT hr = MF_E_UNEXPECTED;
+    IMFAsyncResult *result;
+
+    *stream = NULL;
+
+    if (FAILED(IUnknown_QueryInterface(unk, &IID_IMFAsyncResult, (void **)&result)))
+        return hr;
+
+    EnterCriticalSection(&async_create_file_cs);
+
+    LIST_FOR_EACH_ENTRY(item, &async_create_file_results, struct async_create_file_result, entry)
+    {
+        if (result == item->result)
+        {
+            *stream = item->stream;
+            IMFAsyncResult_Release(item->result);
+            list_remove(&item->entry);
+            heap_free(item);
+            break;
+        }
+    }
+
+    LeaveCriticalSection(&async_create_file_cs);
+
+    if (*stream)
+        hr = IMFAsyncResult_GetStatus(result);
+
+    IMFAsyncResult_Release(result);
+
+    return hr;
+}
+
+/***********************************************************************
+ *      MFEndCreateFile (mfplat.@)
+ */
+HRESULT WINAPI MFEndCreateFile(IMFAsyncResult *result, IMFByteStream **stream)
+{
+    TRACE("%p, %p.\n", result, stream);
+
+    return async_create_file_pull_result((IUnknown *)result, stream);
+}
+
+/***********************************************************************
+ *      MFCancelCreateFile (mfplat.@)
+ */
+HRESULT WINAPI MFCancelCreateFile(IUnknown *cancel_cookie)
+{
+    IMFByteStream *stream = NULL;
+    HRESULT hr;
+
+    TRACE("%p.\n", cancel_cookie);
+
+    hr = async_create_file_pull_result(cancel_cookie, &stream);
+
+    if (stream)
+        IMFByteStream_Release(stream);
+
+    return hr;
 }

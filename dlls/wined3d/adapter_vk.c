@@ -240,7 +240,7 @@ static HRESULT adapter_vk_create_device(struct wined3d *wined3d, const struct wi
 
     if ((vr = VK_CALL(vkCreateDevice(physical_device, &device_info, NULL, &vk_device))) < 0)
     {
-        WARN("Failed to create Vulkan device, vr %d.\n", vr);
+        WARN("Failed to create Vulkan device, vr %s.\n", wined3d_debug_vkresult(vr));
         vk_device = VK_NULL_HANDLE;
         hr = hresult_from_vk_result(vr);
         goto fail;
@@ -268,6 +268,8 @@ static HRESULT adapter_vk_create_device(struct wined3d *wined3d, const struct wi
         goto fail;
     }
 
+    *device = &device_vk->d;
+
     return WINED3D_OK;
 
 fail:
@@ -286,10 +288,33 @@ static void adapter_vk_destroy_device(struct wined3d_device *device)
     heap_free(device_vk);
 }
 
-static BOOL adapter_vk_create_context(struct wined3d_context *context,
-        struct wined3d_texture *target, const struct wined3d_format *ds_format)
+static HRESULT adapter_vk_create_context(struct wined3d_swapchain *swapchain, struct wined3d_context **context)
 {
-    return TRUE;
+    struct wined3d_context *context_vk;
+    HRESULT hr;
+
+    TRACE("swapchain %p, context %p.\n", swapchain, context);
+
+    if (!(context_vk = heap_alloc_zero(sizeof(*context_vk))))
+        return E_OUTOFMEMORY;
+
+    if (FAILED(hr = wined3d_context_vk_init(context_vk, swapchain)))
+    {
+        WARN("Failed to initialise context.\n");
+        heap_free(context_vk);
+        return hr;
+    }
+
+    TRACE("Created context %p.\n", context_vk);
+    *context = context_vk;
+
+    return WINED3D_OK;
+}
+
+static void adapter_vk_destroy_context(struct wined3d_context *context)
+{
+    wined3d_context_cleanup(context);
+    heap_free(context);
 }
 
 static void adapter_vk_get_wined3d_caps(const struct wined3d_adapter *adapter, struct wined3d_caps *caps)
@@ -397,14 +422,29 @@ static BOOL adapter_vk_check_format(const struct wined3d_adapter *adapter,
     return TRUE;
 }
 
+static HRESULT adapter_vk_init_3d(struct wined3d_device *device)
+{
+    TRACE("device %p.\n", device);
+
+    return WINED3D_OK;
+}
+
+static void adapter_vk_uninit_3d(struct wined3d_device *device)
+{
+    TRACE("device %p.\n", device);
+}
+
 static const struct wined3d_adapter_ops wined3d_adapter_vk_ops =
 {
     adapter_vk_destroy,
     adapter_vk_create_device,
     adapter_vk_destroy_device,
     adapter_vk_create_context,
+    adapter_vk_destroy_context,
     adapter_vk_get_wined3d_caps,
     adapter_vk_check_format,
+    adapter_vk_init_3d,
+    adapter_vk_uninit_3d,
 };
 
 static unsigned int wined3d_get_wine_vk_version(void)
@@ -414,7 +454,9 @@ static unsigned int wined3d_get_wine_vk_version(void)
 
     major = atoi(ptr);
 
-    while (isdigit(*ptr) || *ptr == '.')
+    while (isdigit(*ptr))
+        ++ptr;
+    if (*ptr == '.')
         ++ptr;
 
     minor = atoi(ptr);
@@ -453,7 +495,7 @@ static BOOL enable_vulkan_instance_extensions(uint32_t *extension_count,
 
     if ((vr = pfn_vkEnumerateInstanceExtensionProperties(NULL, &count, NULL)) < 0)
     {
-        WARN("Failed to count instance extensions, vr %d.\n", vr);
+        WARN("Failed to count instance extensions, vr %s.\n", wined3d_debug_vkresult(vr));
         goto done;
     }
     if (!(extensions = heap_calloc(count, sizeof(*extensions))))
@@ -463,7 +505,7 @@ static BOOL enable_vulkan_instance_extensions(uint32_t *extension_count,
     }
     if ((vr = pfn_vkEnumerateInstanceExtensionProperties(NULL, &count, extensions)) < 0)
     {
-        WARN("Failed to enumerate extensions, vr %d.\n", vr);
+        WARN("Failed to enumerate extensions, vr %s.\n", wined3d_debug_vkresult(vr));
         goto done;
     }
 
@@ -546,7 +588,7 @@ static BOOL wined3d_init_vulkan(struct wined3d_vk_info *vk_info)
 
     if ((vr = VK_CALL(vkCreateInstance(&instance_info, NULL, &instance))) < 0)
     {
-        WARN("Failed to create Vulkan instance, vr %d.\n", vr);
+        WARN("Failed to create Vulkan instance, vr %s.\n", wined3d_debug_vkresult(vr));
         goto fail;
     }
 
@@ -594,7 +636,7 @@ static VkPhysicalDevice get_vulkan_physical_device(struct wined3d_vk_info *vk_in
 
     if ((vr = VK_CALL(vkEnumeratePhysicalDevices(vk_info->instance, &count, NULL))) < 0)
     {
-        WARN("Failed to enumerate physical devices, vr %d.\n", vr);
+        WARN("Failed to enumerate physical devices, vr %s.\n", wined3d_debug_vkresult(vr));
         return VK_NULL_HANDLE;
     }
     if (!count)
@@ -611,36 +653,76 @@ static VkPhysicalDevice get_vulkan_physical_device(struct wined3d_vk_info *vk_in
 
     if ((vr = VK_CALL(vkEnumeratePhysicalDevices(vk_info->instance, &count, physical_devices))) < 0)
     {
-        WARN("Failed to get physical devices, vr %d.\n", vr);
+        WARN("Failed to get physical devices, vr %s.\n", wined3d_debug_vkresult(vr));
         return VK_NULL_HANDLE;
     }
 
     return physical_devices[0];
 }
 
-const struct wined3d_gpu_description *get_vulkan_gpu_description(const VkPhysicalDeviceProperties *properties)
+static enum wined3d_display_driver guess_display_driver(enum wined3d_pci_vendor vendor)
 {
-    const struct wined3d_gpu_description *description;
+    switch (vendor)
+    {
+        case HW_VENDOR_AMD:    return DRIVER_AMD_RX;
+        case HW_VENDOR_INTEL:  return DRIVER_INTEL_HD4000;
+        case HW_VENDOR_NVIDIA: return DRIVER_NVIDIA_GEFORCE8;
+        default:               return DRIVER_WINE;
+    }
+}
+
+static void adapter_vk_init_driver_info(struct wined3d_adapter *adapter,
+        const VkPhysicalDeviceProperties *properties, const VkPhysicalDeviceMemoryProperties *memory_properties)
+{
+    const struct wined3d_gpu_description *gpu_description;
+    struct wined3d_gpu_description description;
+    UINT64 vram_bytes, sysmem_bytes;
+    const VkMemoryHeap *heap;
+    unsigned int i;
 
     TRACE("Device name: %s.\n", debugstr_a(properties->deviceName));
     TRACE("Vendor ID: 0x%04x, Device ID: 0x%04x.\n", properties->vendorID, properties->deviceID);
     TRACE("Driver version: %#x.\n", properties->driverVersion);
     TRACE("API version: %s.\n", debug_vk_version(properties->apiVersion));
 
-    if ((description = wined3d_get_gpu_description(properties->vendorID, properties->deviceID)))
-        return description;
+    for (i = 0, vram_bytes = 0, sysmem_bytes = 0; i < memory_properties->memoryHeapCount; ++i)
+    {
+        heap = &memory_properties->memoryHeaps[i];
+        TRACE("Memory heap [%u]: flags %#x, size 0x%s.\n",
+                i, heap->flags, wine_dbgstr_longlong(heap->size));
+        if (heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+            vram_bytes += heap->size;
+        else
+            sysmem_bytes += heap->size;
+    }
+    TRACE("Total device memory: 0x%s.\n", wine_dbgstr_longlong(vram_bytes));
+    TRACE("Total shared system memory: 0x%s.\n", wine_dbgstr_longlong(sysmem_bytes));
 
-    FIXME("Failed to retrieve GPU description for device %s %04x:%04x.\n",
-            debugstr_a(properties->deviceName), properties->vendorID, properties->deviceID);
+    if (!(gpu_description = wined3d_get_user_override_gpu_description(properties->vendorID, properties->deviceID)))
+        gpu_description = wined3d_get_gpu_description(properties->vendorID, properties->deviceID);
 
-    return wined3d_get_gpu_description(HW_VENDOR_AMD, CARD_AMD_RADEON_RX_VEGA);
+    if (!gpu_description)
+    {
+        FIXME("Failed to retrieve GPU description for device %s %04x:%04x.\n",
+                debugstr_a(properties->deviceName), properties->vendorID, properties->deviceID);
+
+        description.vendor = properties->vendorID;
+        description.device = properties->deviceID;
+        description.description = properties->deviceName;
+        description.driver = guess_display_driver(properties->vendorID);
+        description.vidmem = vram_bytes;
+
+        gpu_description = &description;
+    }
+
+    wined3d_driver_info_init(&adapter->driver_info, gpu_description, vram_bytes, sysmem_bytes);
 }
 
 static BOOL wined3d_adapter_vk_init(struct wined3d_adapter_vk *adapter_vk,
         unsigned int ordinal, unsigned int wined3d_creation_flags)
 {
     struct wined3d_vk_info *vk_info = &adapter_vk->vk_info;
-    const struct wined3d_gpu_description *gpu_description;
+    VkPhysicalDeviceMemoryProperties memory_properties;
     struct wined3d_adapter *adapter = &adapter_vk->a;
     VkPhysicalDeviceIDProperties id_properties;
     VkPhysicalDeviceProperties2 properties2;
@@ -671,12 +753,11 @@ static BOOL wined3d_adapter_vk_init(struct wined3d_adapter_vk *adapter_vk,
         VK_CALL(vkGetPhysicalDeviceProperties(adapter_vk->physical_device, &properties2.properties));
     adapter_vk->device_limits = properties2.properties.limits;
 
-    if (!(gpu_description = get_vulkan_gpu_description(&properties2.properties)))
-    {
-        ERR("Failed to get GPU description.\n");
-        goto fail_vulkan;
-    }
-    wined3d_driver_info_init(&adapter->driver_info, gpu_description, wined3d_settings.emulated_textureram);
+    VK_CALL(vkGetPhysicalDeviceMemoryProperties(adapter_vk->physical_device, &memory_properties));
+
+    adapter_vk_init_driver_info(adapter, &properties2.properties, &memory_properties);
+    adapter->vram_bytes_used = 0;
+    TRACE("Emulating 0x%s bytes of video ram.\n", wine_dbgstr_longlong(adapter->driver_info.vram_bytes));
 
     memcpy(&adapter->driver_uuid, id_properties.driverUUID, sizeof(adapter->driver_uuid));
     memcpy(&adapter->device_uuid, id_properties.deviceUUID, sizeof(adapter->device_uuid));
@@ -689,6 +770,7 @@ static BOOL wined3d_adapter_vk_init(struct wined3d_adapter_vk *adapter_vk,
     adapter->shader_backend = &none_shader_backend;
 
     adapter->d3d_info.wined3d_creation_flags = wined3d_creation_flags;
+    adapter->d3d_info.texture_swizzle = TRUE;
 
     return TRUE;
 

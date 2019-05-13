@@ -172,6 +172,7 @@ static void create_texture_view(struct wined3d_gl_view *view, GLenum view_target
     const struct wined3d_format_gl *view_format_gl;
     unsigned int level_idx, layer_idx, layer_count;
     const struct wined3d_gl_info *gl_info;
+    struct wined3d_context_gl *context_gl;
     struct wined3d_context *context;
     GLuint texture_name;
 
@@ -179,6 +180,7 @@ static void create_texture_view(struct wined3d_gl_view *view, GLenum view_target
     view->target = view_target;
 
     context = context_acquire(texture_gl->t.resource.device, NULL, 0);
+    context_gl = wined3d_context_gl(context);
     gl_info = context->gl_info;
 
     if (!gl_info->supported[ARB_TEXTURE_VIEW])
@@ -218,7 +220,7 @@ static void create_texture_view(struct wined3d_gl_view *view, GLenum view_target
             return;
         }
 
-        context_bind_texture(context, view->target, view->name);
+        wined3d_context_gl_bind_texture(context_gl, view->target, view->name);
         gl_info->gl_ops.gl.p_glTexParameteriv(view->target, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
         gl_info->gl_ops.gl.p_glTexParameteri(view->target, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
         checkGLcall("initialize stencil view");
@@ -226,11 +228,11 @@ static void create_texture_view(struct wined3d_gl_view *view, GLenum view_target
         context_invalidate_compute_state(context, STATE_COMPUTE_SHADER_RESOURCE_BINDING);
         context_invalidate_state(context, STATE_GRAPHICS_SHADER_RESOURCE_BINDING);
     }
-    else if (!is_identity_fixup(view_format->color_fixup) && can_use_texture_swizzle(gl_info, view_format))
+    else if (!is_identity_fixup(view_format->color_fixup) && can_use_texture_swizzle(context->d3d_info, view_format))
     {
         GLint swizzle[4];
 
-        context_bind_texture(context, view->target, view->name);
+        wined3d_context_gl_bind_texture(context_gl, view->target, view->name);
         wined3d_gl_texture_swizzle_from_color_fixup(swizzle, view_format->color_fixup);
         gl_info->gl_ops.gl.p_glTexParameteriv(view->target, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
         checkGLcall("set format swizzle");
@@ -246,6 +248,7 @@ static void create_buffer_texture(struct wined3d_gl_view *view, struct wined3d_c
         struct wined3d_buffer *buffer, const struct wined3d_format *view_format,
         unsigned int offset, unsigned int size)
 {
+    struct wined3d_context_gl *context_gl = wined3d_context_gl(context);
     const struct wined3d_gl_info *gl_info = context->gl_info;
     const struct wined3d_format_gl *view_format_gl;
 
@@ -268,7 +271,7 @@ static void create_buffer_texture(struct wined3d_gl_view *view, struct wined3d_c
     view->target = GL_TEXTURE_BUFFER;
     gl_info->gl_ops.gl.p_glGenTextures(1, &view->name);
 
-    context_bind_texture(context, GL_TEXTURE_BUFFER, view->name);
+    wined3d_context_gl_bind_texture(context_gl, GL_TEXTURE_BUFFER, view->name);
     if (gl_info->supported[ARB_TEXTURE_BUFFER_RANGE])
     {
         GL_EXTCALL(glTexBufferRange(GL_TEXTURE_BUFFER, view_format_gl->internal,
@@ -827,6 +830,7 @@ HRESULT CDECL wined3d_shader_resource_view_create(const struct wined3d_view_desc
 void wined3d_shader_resource_view_gl_bind(struct wined3d_shader_resource_view_gl *view_gl,
         unsigned int unit, struct wined3d_sampler *sampler, struct wined3d_context *context)
 {
+    struct wined3d_context_gl *context_gl = wined3d_context_gl(context);
     const struct wined3d_gl_info *gl_info = context->gl_info;
     struct wined3d_texture_gl *texture_gl;
 
@@ -834,7 +838,7 @@ void wined3d_shader_resource_view_gl_bind(struct wined3d_shader_resource_view_gl
 
     if (view_gl->gl_view.name)
     {
-        context_bind_texture(context, view_gl->gl_view.target, view_gl->gl_view.name);
+        wined3d_context_gl_bind_texture(context_gl, view_gl->gl_view.target, view_gl->gl_view.name);
         wined3d_sampler_bind(sampler, unit, NULL, context);
         return;
     }
@@ -854,9 +858,11 @@ void wined3d_shader_resource_view_gl_bind(struct wined3d_shader_resource_view_gl
 static void shader_resource_view_gl_bind_and_dirtify(struct wined3d_shader_resource_view_gl *view_gl,
         struct wined3d_context *context)
 {
-    if (context->active_texture < ARRAY_SIZE(context->rev_tex_unit_map))
+    struct wined3d_context_gl *context_gl = wined3d_context_gl(context);
+
+    if (context->active_texture < ARRAY_SIZE(context_gl->rev_tex_unit_map))
     {
-        DWORD active_sampler = context->rev_tex_unit_map[context->active_texture];
+        unsigned int active_sampler = context_gl->rev_tex_unit_map[context->active_texture];
         if (active_sampler != WINED3D_UNMAPPED_STAGE)
             context_invalidate_state(context, STATE_SAMPLER(active_sampler));
     }
@@ -865,7 +871,7 @@ static void shader_resource_view_gl_bind_and_dirtify(struct wined3d_shader_resou
     context_invalidate_compute_state(context, STATE_COMPUTE_SHADER_RESOURCE_BINDING);
     context_invalidate_state(context, STATE_GRAPHICS_SHADER_RESOURCE_BINDING);
 
-    context_bind_texture(context, view_gl->gl_view.target, view_gl->gl_view.name);
+    wined3d_context_gl_bind_texture(context_gl, view_gl->gl_view.target, view_gl->gl_view.name);
 }
 
 void shader_resource_view_generate_mipmaps(struct wined3d_shader_resource_view *view)
@@ -900,7 +906,7 @@ void shader_resource_view_generate_mipmaps(struct wined3d_shader_resource_view *
     }
     else
     {
-        wined3d_texture_gl_bind_and_dirtify(texture_gl, context, srgb);
+        wined3d_texture_gl_bind_and_dirtify(texture_gl, wined3d_context_gl(context), srgb);
         gl_info->gl_ops.gl.p_glTexParameteri(texture_gl->target, GL_TEXTURE_BASE_LEVEL, base_level);
         gl_info->gl_ops.gl.p_glTexParameteri(texture_gl->target, GL_TEXTURE_MAX_LEVEL, max_level);
     }

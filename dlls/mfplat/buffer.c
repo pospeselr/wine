@@ -311,7 +311,7 @@ static HRESULT WINAPI sample_CompareItem(IMFSample *iface, REFGUID key, REFPROPV
 {
     struct sample *sample = impl_from_IMFSample(iface);
 
-    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, result);
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
 
     return attributes_CompareItem(&sample->attributes, key, value, result);
 }
@@ -429,7 +429,7 @@ static HRESULT WINAPI sample_SetItem(IMFSample *iface, REFGUID key, REFPROPVARIA
 {
     struct sample *sample = impl_from_IMFSample(iface);
 
-    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
 
     return attributes_SetItem(&sample->attributes, key, value);
 }
@@ -438,7 +438,7 @@ static HRESULT WINAPI sample_DeleteItem(IMFSample *iface, REFGUID key)
 {
     struct sample *sample = impl_from_IMFSample(iface);
 
-    TRACE("%p, %p.\n", iface, debugstr_attr(key));
+    TRACE("%p, %s.\n", iface, debugstr_attr(key));
 
     return attributes_DeleteItem(&sample->attributes, key);
 }
@@ -483,7 +483,7 @@ static HRESULT WINAPI sample_SetGUID(IMFSample *iface, REFGUID key, REFGUID valu
 {
     struct sample *sample = impl_from_IMFSample(iface);
 
-    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_guid(value));
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
 
     return attributes_SetGUID(&sample->attributes, key, value);
 }
@@ -686,9 +686,29 @@ static HRESULT WINAPI sample_GetBufferByIndex(IMFSample *iface, DWORD index, IMF
 
 static HRESULT WINAPI sample_ConvertToContiguousBuffer(IMFSample *iface, IMFMediaBuffer **buffer)
 {
-    FIXME("%p, %p.\n", iface, buffer);
+    struct sample *sample = impl_from_IMFSample(iface);
+    HRESULT hr = S_OK;
 
-    return E_NOTIMPL;
+    TRACE("%p, %p.\n", iface, buffer);
+
+    EnterCriticalSection(&sample->cs);
+
+    if (sample->buffer_count == 0)
+        hr = E_UNEXPECTED;
+    else if (sample->buffer_count == 1)
+    {
+        *buffer = sample->buffers[0];
+        IMFMediaBuffer_AddRef(*buffer);
+    }
+    else
+    {
+        FIXME("Samples with multiple buffers are not supported.\n");
+        hr = E_NOTIMPL;
+    }
+
+    LeaveCriticalSection(&sample->cs);
+
+    return hr;
 }
 
 static HRESULT WINAPI sample_AddBuffer(IMFSample *iface, IMFMediaBuffer *buffer)

@@ -1829,7 +1829,7 @@ static HRESULT WINAPI GSTOutPin_DecideAllocator(BaseOutputPin *iface, IMemInputP
     return hr;
 }
 
-static HRESULT WINAPI GSTOutPin_BreakConnect(BaseOutputPin *This)
+static HRESULT break_source_connection(BaseOutputPin *This)
 {
     HRESULT hr;
 
@@ -1840,7 +1840,9 @@ static HRESULT WINAPI GSTOutPin_BreakConnect(BaseOutputPin *This)
         hr = VFW_E_NOT_CONNECTED;
     else
     {
-        hr = IPin_Disconnect(This->pin.pConnectedTo);
+        hr = IMemAllocator_Decommit(This->pAllocator);
+        if (SUCCEEDED(hr))
+            hr = IPin_Disconnect(This->pin.pConnectedTo);
         IPin_Disconnect((IPin *)This);
     }
     LeaveCriticalSection(This->pin.pCritSec);
@@ -1872,13 +1874,11 @@ static const IPinVtbl GST_OutputPin_Vtbl = {
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
     {
         GSTOutPin_CheckMediaType,
-        BaseOutputPinImpl_AttemptConnection,
-        BasePinImpl_GetMediaTypeVersion,
         GSTOutPin_GetMediaType
     },
+    BaseOutputPinImpl_AttemptConnection,
     GSTOutPin_DecideBufferSize,
     GSTOutPin_DecideAllocator,
-    GSTOutPin_BreakConnect
 };
 
 static HRESULT GST_AddPin(GSTImpl *This, const PIN_INFO *piOutput, const AM_MEDIA_TYPE *amt)
@@ -1921,7 +1921,7 @@ static HRESULT GST_RemoveOutputPins(GSTImpl *This)
     This->my_src = This->their_sink = NULL;
 
     for (i = 0; i < This->cStreams; i++) {
-        hr = BaseOutputPinImpl_BreakConnect(&This->ppPins[i]->pin);
+        hr = break_source_connection(&This->ppPins[i]->pin);
         TRACE("Disconnect: %08x\n", hr);
         IPin_Release(&This->ppPins[i]->pin.pin.IPin_iface);
     }

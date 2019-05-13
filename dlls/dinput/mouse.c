@@ -158,6 +158,9 @@ static HRESULT mousedev_enum_deviceA(DWORD dwDevType, DWORD dwFlags, LPDIDEVICEI
     if (id != 0)
         return E_FAIL;
 
+    if (dwFlags & DIEDFL_FORCEFEEDBACK)
+        return S_FALSE;
+
     if ((dwDevType == 0) ||
 	((dwDevType == DIDEVTYPE_MOUSE) && (version < 0x0800)) ||
 	(((dwDevType == DI8DEVCLASS_POINTER) || (dwDevType == DI8DEVTYPE_MOUSE)) && (version >= 0x0800))) {
@@ -175,6 +178,9 @@ static HRESULT mousedev_enum_deviceW(DWORD dwDevType, DWORD dwFlags, LPDIDEVICEI
 {
     if (id != 0)
         return E_FAIL;
+
+    if (dwFlags & DIEDFL_FORCEFEEDBACK)
+        return S_FALSE;
 
     if ((dwDevType == 0) ||
 	((dwDevType == DIDEVTYPE_MOUSE) && (version < 0x0800)) ||
@@ -759,11 +765,6 @@ static HRESULT WINAPI SysMouseAImpl_GetDeviceInfo(
     SysMouseImpl *This = impl_from_IDirectInputDevice8A(iface);
     TRACE("(this=%p,%p)\n", This, pdidi);
 
-    if (pdidi->dwSize != sizeof(DIDEVICEINSTANCEA)) {
-        WARN(" dinput3 not supported yet...\n");
-	return DI_OK;
-    }
-
     fill_mouse_dideviceinstanceA(pdidi, This->base.dinput->dwVersion);
     
     return DI_OK;
@@ -829,7 +830,8 @@ static HRESULT WINAPI SysMouseWImpl_SetActionMap(LPDIRECTINPUTDEVICE8W iface,
                                                  LPCWSTR lpszUserName,
                                                  DWORD dwFlags)
 {
-    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", iface, lpdiaf, debugstr_w(lpszUserName), dwFlags);
+    SysMouseImpl *This = impl_from_IDirectInputDevice8W(iface);
+    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", This, lpdiaf, debugstr_w(lpszUserName), dwFlags);
 
     return _set_action_map(iface, lpdiaf, lpszUserName, dwFlags, &c_dfDIMouse2);
 }

@@ -51,6 +51,7 @@ static int winetest_debug;
 static int winetest_report_success;
 
 static POBJECT_TYPE *pExEventObjectType, *pIoFileObjectType, *pPsThreadType;
+static PEPROCESS *pPsInitialSystemProcess;
 
 void WINAPI ObfReferenceObject( void *obj );
 
@@ -170,6 +171,11 @@ static void winetest_end_todo(void)
     todo_level >>= 1;
 }
 
+static int broken(int condition)
+{
+    return !running_under_wine && condition;
+}
+
 #define ok(condition, ...)  ok_(__FILE__, __LINE__, condition, __VA_ARGS__)
 #define todo_if(is_todo) for (winetest_start_todo(is_todo); \
                               winetest_loop_todo(); \
@@ -227,6 +233,7 @@ static void test_irp_struct(IRP *irp, DEVICE_OBJECT *device)
     ok(irpsp->FileObject == last_created_file, "FileObject != last_created_file\n");
     ok(irpsp->DeviceObject == device, "unexpected DeviceObject\n");
     ok(irpsp->FileObject->DeviceObject == device, "unexpected FileObject->DeviceObject\n");
+    ok(!irp->UserEvent, "UserEvent = %p\n", irp->UserEvent);
 }
 
 static void test_mdl_map(void)
@@ -244,7 +251,7 @@ static void test_mdl_map(void)
 todo_wine
     ok(addr != NULL, "MmMapLockedPagesSpecifyCache failed\n");
 
-    /* MmUnmapLockedPages(addr, mdl); */
+    MmUnmapLockedPages(addr, mdl);
 
     IoFreeMdl(mdl);
 }
@@ -314,19 +321,34 @@ static NTSTATUS wait_single_handle(HANDLE handle, ULONGLONG timeout)
     return ZwWaitForSingleObject(handle, FALSE, &integer);
 }
 
-static void test_currentprocess(void)
+static void test_current_thread(BOOL is_system)
 {
+    DISPATCHER_HEADER *header;
     PEPROCESS current;
     PETHREAD thread;
     NTSTATUS ret;
 
     current = IoGetCurrentProcess();
-todo_wine
     ok(current != NULL, "Expected current process to be non-NULL\n");
+
+    header = (DISPATCHER_HEADER*)current;
+    ok(header->Type == 3, "header->Type != 3, = %u\n", header->Type);
+    ret = wait_single(current, 0);
+    ok(ret == STATUS_TIMEOUT, "got %#x\n", ret);
+
+    if (is_system)
+        ok(current == *pPsInitialSystemProcess, "current != PsInitialSystemProcess\n");
+    else
+        ok(current != *pPsInitialSystemProcess, "current == PsInitialSystemProcess\n");
+
+    ok(PsGetProcessId(current) == PsGetCurrentProcessId(), "process IDs don't match\n");
 
     thread = PsGetCurrentThread();
     ret = wait_single( thread, 0 );
     ok(ret == STATUS_TIMEOUT, "got %#x\n", ret);
+
+    ok(PsGetThreadId((PETHREAD)KeGetCurrentThread()) == PsGetCurrentThreadId(), "thread IDs don't match\n");
+    ok(PsIsSystemThread((PETHREAD)KeGetCurrentThread()) == is_system, "unexpected system thread\n");
 }
 
 static void sleep(void)
@@ -626,13 +648,13 @@ static void test_sync(void)
     /* test timers */
     KeInitializeTimerEx(&timer, NotificationTimer);
 
-    timeout.QuadPart = -100;
+    timeout.QuadPart = -20 * 10000;
     KeSetTimerEx(&timer, timeout, 0, NULL);
 
     ret = wait_single(&timer, 0);
     ok(ret == WAIT_TIMEOUT, "got %#x\n", ret);
 
-    ret = wait_single(&timer, -200);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == 0, "got %#x\n", ret);
 
     ret = wait_single(&timer, 0);
@@ -646,31 +668,219 @@ static void test_sync(void)
     ret = wait_single(&timer, 0);
     ok(ret == WAIT_TIMEOUT, "got %#x\n", ret);
 
-    ret = wait_single(&timer, -200);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == 0, "got %#x\n", ret);
 
-    ret = wait_single(&timer, 0);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == WAIT_TIMEOUT, "got %#x\n", ret);
 
     KeCancelTimer(&timer);
-    KeSetTimerEx(&timer, timeout, 10, NULL);
+    KeSetTimerEx(&timer, timeout, 20, NULL);
 
     ret = wait_single(&timer, 0);
     ok(ret == WAIT_TIMEOUT, "got %#x\n", ret);
 
-    ret = wait_single(&timer, -200);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == 0, "got %#x\n", ret);
 
     ret = wait_single(&timer, 0);
     ok(ret == WAIT_TIMEOUT, "got %#x\n", ret);
 
-    ret = wait_single(&timer, -20 * 10000);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == 0, "got %#x\n", ret);
 
-    ret = wait_single(&timer, -20 * 10000);
+    ret = wait_single(&timer, -40 * 10000);
     ok(ret == 0, "got %#x\n", ret);
 
     KeCancelTimer(&timer);
+}
+
+static void test_call_driver(DEVICE_OBJECT *device)
+{
+    IO_STACK_LOCATION *irpsp;
+    IO_STATUS_BLOCK iosb;
+    IRP *irp = NULL;
+    KEVENT event;
+    NTSTATUS status;
+
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+    ok(irp->UserIosb == &iosb, "unexpected UserIosb\n");
+    ok(!irp->Cancel, "Cancel = %x\n", irp->Cancel);
+    ok(!irp->CancelRoutine, "CancelRoutine = %x\n", irp->CancelRoutine);
+    ok(!irp->UserEvent, "UserEvent = %p\n", irp->UserEvent);
+    ok(irp->CurrentLocation == 2, "CurrentLocation = %u\n", irp->CurrentLocation);
+
+    irpsp = IoGetNextIrpStackLocation(irp);
+    ok(irpsp->MajorFunction == IRP_MJ_FLUSH_BUFFERS, "MajorFunction = %u\n", irpsp->MajorFunction);
+    ok(!irpsp->DeviceObject, "DeviceObject = %u\n", irpsp->DeviceObject);
+    ok(!irpsp->FileObject, "FileObject = %u\n", irpsp->FileObject);
+    ok(!irpsp->CompletionRoutine, "CompletionRouptine = %p\n", irpsp->CompletionRoutine);
+
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    irp->IoStatus.Information = 0;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+
+    KeInitializeEvent(&event, NotificationEvent, FALSE);
+
+    irp = IoBuildSynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &event, &iosb);
+    ok(irp->UserIosb == &iosb, "unexpected UserIosb\n");
+    ok(!irp->Cancel, "Cancel = %x\n", irp->Cancel);
+    ok(!irp->CancelRoutine, "CancelRoutine = %x\n", irp->CancelRoutine);
+    ok(irp->UserEvent == &event, "UserEvent = %p\n", irp->UserEvent);
+    ok(irp->CurrentLocation == 2, "CurrentLocation = %u\n", irp->CurrentLocation);
+
+    irpsp = IoGetNextIrpStackLocation(irp);
+    ok(irpsp->MajorFunction == IRP_MJ_FLUSH_BUFFERS, "MajorFunction = %u\n", irpsp->MajorFunction);
+    ok(!irpsp->DeviceObject, "DeviceObject = %u\n", irpsp->DeviceObject);
+    ok(!irpsp->FileObject, "FileObject = %u\n", irpsp->FileObject);
+    ok(!irpsp->CompletionRoutine, "CompletionRouptine = %p\n", irpsp->CompletionRoutine);
+
+    status = wait_single(&event, 0);
+    ok(status == STATUS_TIMEOUT, "got %#x\n", status);
+
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    status = wait_single(&event, 0);
+    ok(status == STATUS_TIMEOUT, "got %#x\n", status);
+
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    irp->IoStatus.Information = 0;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+
+    status = wait_single(&event, 0);
+    ok(status == STATUS_SUCCESS, "got %#x\n", status);
+}
+
+static int cancel_cnt;
+
+static void WINAPI cancel_irp(DEVICE_OBJECT *device, IRP *irp)
+{
+    IoReleaseCancelSpinLock(irp->CancelIrql);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+    ok(!irp->CancelRoutine, "CancelRoutine = %p\n", irp->CancelRoutine);
+    irp->IoStatus.Status = STATUS_CANCELLED;
+    irp->IoStatus.Information = 0;
+    cancel_cnt++;
+}
+
+static void WINAPI cancel_ioctl_irp(DEVICE_OBJECT *device, IRP *irp)
+{
+    IoReleaseCancelSpinLock(irp->CancelIrql);
+    irp->IoStatus.Status = STATUS_CANCELLED;
+    irp->IoStatus.Information = 0;
+    cancel_cnt++;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+}
+
+static NTSTATUS WINAPI cancel_test_completion(DEVICE_OBJECT *device, IRP *irp, void *context)
+{
+    ok(cancel_cnt == 1, "cancel_cnt = %d\n", cancel_cnt);
+    *(BOOL*)context = TRUE;
+    return STATUS_SUCCESS;
+}
+
+static void test_cancel_irp(DEVICE_OBJECT *device)
+{
+    IO_STACK_LOCATION *irpsp;
+    IO_STATUS_BLOCK iosb;
+    IRP *irp = NULL;
+    BOOL completion_called;
+    BOOLEAN r;
+    NTSTATUS status;
+
+    /* cancel IRP with no cancel routine */
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+
+    r = IoCancelIrp(irp);
+    ok(!r, "IoCancelIrp returned %x\n", r);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+
+    r = IoCancelIrp(irp);
+    ok(!r, "IoCancelIrp returned %x\n", r);
+    IoFreeIrp(irp);
+
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+
+    /* cancel IRP with cancel routine */
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    ok(irp->CurrentLocation == 1, "CurrentLocation = %u\n", irp->CurrentLocation);
+    irpsp = IoGetCurrentIrpStackLocation(irp);
+    ok(irpsp->DeviceObject == device, "DeviceObject = %u\n", irpsp->DeviceObject);
+
+    IoSetCancelRoutine(irp, cancel_irp);
+    cancel_cnt = 0;
+    r = IoCancelIrp(irp);
+    ok(r == TRUE, "IoCancelIrp returned %x\n", r);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+    ok(cancel_cnt == 1, "cancel_cnt = %d\n", cancel_cnt);
+
+    cancel_cnt = 0;
+    r = IoCancelIrp(irp);
+    ok(!r, "IoCancelIrp returned %x\n", r);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+    ok(!cancel_cnt, "cancel_cnt = %d\n", cancel_cnt);
+
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+
+    /* cancel IRP with cancel and completion routines with no SL_INVOKE_ON_ERROR */
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+    IoSetCompletionRoutine(irp, cancel_test_completion, &completion_called, TRUE, FALSE, TRUE);
+
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    IoSetCancelRoutine(irp, cancel_irp);
+    cancel_cnt = 0;
+    r = IoCancelIrp(irp);
+    ok(r == TRUE, "IoCancelIrp returned %x\n", r);
+    ok(cancel_cnt == 1, "cancel_cnt = %d\n", cancel_cnt);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+
+    completion_called = FALSE;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    ok(completion_called, "completion not called\n");
+
+    /* cancel IRP with cancel and completion routines with no SL_INVOKE_ON_CANCEL flag */
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+    IoSetCompletionRoutine(irp, cancel_test_completion, &completion_called, TRUE, TRUE, FALSE);
+
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    IoSetCancelRoutine(irp, cancel_irp);
+    cancel_cnt = 0;
+    r = IoCancelIrp(irp);
+    ok(r == TRUE, "IoCancelIrp returned %x\n", r);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+    ok(cancel_cnt == 1, "cancel_cnt = %d\n", cancel_cnt);
+
+    completion_called = FALSE;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    ok(completion_called, "completion not called\n");
+
+    /* cancel IRP with cancel and completion routines, but no SL_INVOKE_ON_ERROR nor SL_INVOKE_ON_CANCEL flag */
+    irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS, device, NULL, 0, NULL, &iosb);
+    IoSetCompletionRoutine(irp, cancel_test_completion, &completion_called, TRUE, FALSE, FALSE);
+
+    status = IoCallDriver(device, irp);
+    ok(status == STATUS_PENDING, "IoCallDriver returned %#x\n", status);
+
+    IoSetCancelRoutine(irp, cancel_irp);
+    cancel_cnt = 0;
+    r = IoCancelIrp(irp);
+    ok(r == TRUE, "IoCancelIrp returned %x\n", r);
+    ok(irp->Cancel == TRUE, "Cancel = %x\n", irp->Cancel);
+    ok(cancel_cnt == 1, "cancel_cnt = %d\n", cancel_cnt);
+
+    completion_called = FALSE;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    ok(!completion_called, "completion not called\n");
 }
 
 static int callout_cnt;
@@ -758,7 +968,7 @@ static void test_ob_reference(const WCHAR *test_path)
 {
     POBJECT_TYPE (WINAPI *pObGetObjectType)(void*);
     OBJECT_ATTRIBUTES attr = { sizeof(attr) };
-    HANDLE event_handle, file_handle, file_handle2, thread_handle;
+    HANDLE event_handle, file_handle, file_handle2, thread_handle, handle;
     DISPATCHER_HEADER *header;
     FILE_OBJECT *file;
     void *obj1, *obj2;
@@ -842,7 +1052,6 @@ static void test_ob_reference(const WCHAR *test_path)
 
     status = ObReferenceObjectByHandle(file_handle2, SYNCHRONIZE, *pIoFileObjectType, KernelMode, &obj2, NULL);
     ok(!status, "ObReferenceObjectByHandle failed: %#x\n", status);
-    todo_wine
     ok(obj1 == obj2, "obj1 != obj2\n");
 
     file = obj1;
@@ -864,8 +1073,23 @@ static void test_ob_reference(const WCHAR *test_path)
     status = wait_single(header, 0);
     ok(status == 0 || status == STATUS_TIMEOUT, "got %#x\n", status);
 
-    ObDereferenceObject(obj1);
     ObDereferenceObject(obj2);
+
+    status = ObOpenObjectByPointer(obj1, OBJ_KERNEL_HANDLE, NULL, 0, NULL, KernelMode, &handle);
+    ok(status == STATUS_SUCCESS, "ObOpenObjectByPointer failed: %#x\n", status);
+
+    status = ZwClose(handle);
+    ok(!status, "ZwClose failed: %#x\n", status);
+
+    status = ObReferenceObjectByHandle(thread_handle, SYNCHRONIZE, *pPsThreadType, KernelMode, &obj2, NULL);
+    ok(!status, "ObReferenceObjectByHandle failed: %#x\n", status);
+    ok(obj1 == obj2, "obj1 != obj2\n");
+    ObDereferenceObject(obj2);
+
+    status = ObOpenObjectByPointer(obj1, OBJ_KERNEL_HANDLE, NULL, 0, *pIoFileObjectType, KernelMode, &handle);
+    ok(status == STATUS_OBJECT_TYPE_MISMATCH, "ObOpenObjectByPointer returned: %#x\n", status);
+
+    ObDereferenceObject(obj1);
 
     status = ZwClose(thread_handle);
     ok(!status, "ZwClose failed: %#x\n", status);
@@ -1179,10 +1403,41 @@ static void test_lookup_thread(void)
     if (thread) ObDereferenceObject(thread);
 
     status = PsLookupThreadByThreadId(NULL, &thread);
-    ok(status == STATUS_INVALID_PARAMETER, "PsLookupThreadByThreadId returned %#x\n", status);
+    ok(status == STATUS_INVALID_CID || broken(status == STATUS_INVALID_PARAMETER) /* winxp */,
+       "PsLookupThreadByThreadId returned %#x\n", status);
 }
 
-static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *stack, ULONG_PTR *info)
+static PIO_WORKITEM main_test_work_item;
+
+static void WINAPI main_test_task(DEVICE_OBJECT *device, void *context)
+{
+    IRP *irp = context;
+    void *buffer = irp->AssociatedIrp.SystemBuffer;
+
+    IoFreeWorkItem(main_test_work_item);
+    main_test_work_item = NULL;
+
+    test_current_thread(TRUE);
+    test_call_driver(device);
+    test_cancel_irp(device);
+
+    /* print process report */
+    if (winetest_debug)
+    {
+        kprintf("%04x:ntoskrnl: %d tests executed (%d marked as todo, %d %s), %d skipped.\n",
+            PsGetCurrentProcessId(), successes + failures + todo_successes + todo_failures,
+            todo_successes, failures + todo_failures,
+            (failures + todo_failures != 1) ? "failures" : "failure", skipped );
+    }
+    ZwClose(okfile);
+
+    *((LONG *)buffer) = failures;
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    irp->IoStatus.Information = sizeof(failures);
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+}
+
+static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *stack)
 {
     ULONG length = stack->Parameters.DeviceIoControl.OutputBufferLength;
     void *buffer = irp->AssociatedIrp.SystemBuffer;
@@ -1214,8 +1469,11 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     pPsThreadType = get_proc_address("PsThreadType");
     ok(!!pPsThreadType, "IofileObjectType not found\n");
 
+    pPsInitialSystemProcess = get_proc_address("PsInitialSystemProcess");
+    ok(!!pPsInitialSystemProcess, "PsInitialSystemProcess not found\n");
+
     test_irp_struct(irp, device);
-    test_currentprocess();
+    test_current_thread(FALSE);
     test_mdl_map();
     test_init_funcs();
     test_load_driver();
@@ -1227,18 +1485,13 @@ static NTSTATUS main_test(DEVICE_OBJECT *device, IRP *irp, IO_STACK_LOCATION *st
     test_resource();
     test_lookup_thread();
 
-    /* print process report */
-    if (winetest_debug)
-    {
-        kprintf("%04x:ntoskrnl: %d tests executed (%d marked as todo, %d %s), %d skipped.\n",
-            PsGetCurrentProcessId(), successes + failures + todo_successes + todo_failures,
-            todo_successes, failures + todo_failures,
-            (failures + todo_failures != 1) ? "failures" : "failure", skipped );
-    }
-    ZwClose(okfile);
-    *((LONG *)buffer) = failures;
-    *info = sizeof(failures);
-    return STATUS_SUCCESS;
+    if (main_test_work_item) return STATUS_UNEXPECTED_IO_ERROR;
+
+    main_test_work_item = IoAllocateWorkItem(device);
+    ok(main_test_work_item != NULL, "main_test_work_item = NULL\n");
+
+    IoQueueWorkItem(main_test_work_item, main_test_task, DelayedWorkQueue, irp);
+    return STATUS_PENDING;
 }
 
 static NTSTATUS test_basic_ioctl(IRP *irp, IO_STACK_LOCATION *stack, ULONG_PTR *info)
@@ -1255,6 +1508,22 @@ static NTSTATUS test_basic_ioctl(IRP *irp, IO_STACK_LOCATION *stack, ULONG_PTR *
     kmemcpy(buffer, teststr, sizeof(teststr));
     *info = sizeof(teststr);
 
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS get_cancel_count(IRP *irp, IO_STACK_LOCATION *stack, ULONG_PTR *info)
+{
+    ULONG length = stack->Parameters.DeviceIoControl.OutputBufferLength;
+    char *buffer = irp->AssociatedIrp.SystemBuffer;
+
+    if (!buffer)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (length < sizeof(DWORD))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    *(DWORD*)buffer = cancel_cnt;
+    *info = sizeof(DWORD);
     return STATUS_SUCCESS;
 }
 
@@ -1297,18 +1566,41 @@ static NTSTATUS WINAPI driver_IoControl(DEVICE_OBJECT *device, IRP *irp)
             status = test_basic_ioctl(irp, stack, &irp->IoStatus.Information);
             break;
         case IOCTL_WINETEST_MAIN_TEST:
-            status = main_test(device, irp, stack, &irp->IoStatus.Information);
+            status = main_test(device, irp, stack);
             break;
         case IOCTL_WINETEST_LOAD_DRIVER:
             status = test_load_driver_ioctl(irp, stack, &irp->IoStatus.Information);
+            break;
+        case IOCTL_WINETEST_RESET_CANCEL:
+            cancel_cnt = 0;
+            status = STATUS_SUCCESS;
+            break;
+        case IOCTL_WINETEST_TEST_CANCEL:
+            IoSetCancelRoutine(irp, cancel_ioctl_irp);
+            IoMarkIrpPending(irp);
+            return STATUS_PENDING;
+        case IOCTL_WINETEST_GET_CANCEL_COUNT:
+            status = get_cancel_count(irp, stack, &irp->IoStatus.Information);
             break;
         default:
             break;
     }
 
-    irp->IoStatus.Status = status;
-    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    if (status != STATUS_PENDING)
+    {
+        irp->IoStatus.Status = status;
+        IoCompleteRequest(irp, IO_NO_INCREMENT);
+    }
+    else IoMarkIrpPending(irp);
     return status;
+}
+
+static NTSTATUS WINAPI driver_FlushBuffers(DEVICE_OBJECT *device, IRP *irp)
+{
+    IO_STACK_LOCATION *irpsp = IoGetCurrentIrpStackLocation(irp);
+    ok(irpsp->DeviceObject == device, "device != DeviceObject\n");
+    IoMarkIrpPending(irp);
+    return STATUS_PENDING;
 }
 
 static NTSTATUS WINAPI driver_Close(DEVICE_OBJECT *device, IRP *irp)
@@ -1344,6 +1636,7 @@ NTSTATUS WINAPI DriverEntry(DRIVER_OBJECT *driver, PUNICODE_STRING registry)
     /* Set driver functions */
     driver->MajorFunction[IRP_MJ_CREATE]            = driver_Create;
     driver->MajorFunction[IRP_MJ_DEVICE_CONTROL]    = driver_IoControl;
+    driver->MajorFunction[IRP_MJ_FLUSH_BUFFERS]     = driver_FlushBuffers;
     driver->MajorFunction[IRP_MJ_CLOSE]             = driver_Close;
 
     RtlInitUnicodeString(&nameW, driver_device);

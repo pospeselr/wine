@@ -76,6 +76,16 @@ DWORD typeFromGUID(REFGUID guid)
     }
 }
 
+DWORD get_device_type(DWORD version, BOOL is_joystick)
+{
+    if (is_joystick)
+        return version >= 0x0800 ? DI8DEVTYPE_JOYSTICK | (DI8DEVTYPEJOYSTICK_STANDARD << 8) :
+                    DIDEVTYPE_JOYSTICK | (DIDEVTYPEJOYSTICK_TRADITIONAL << 8);
+
+    return version >= 0x0800 ? DI8DEVTYPE_GAMEPAD | (DI8DEVTYPEJOYSTICK_STANDARD << 8) :
+                DIDEVTYPE_JOYSTICK | (DIDEVTYPEJOYSTICK_GAMEPAD << 8);
+}
+
 static void _dump_DIEFFECT_flags(DWORD dwFlags)
 {
     if (TRACE_ON(dinput)) {
@@ -461,7 +471,7 @@ HRESULT WINAPI JoystickWGenericImpl_GetCapabilities(LPDIRECTINPUTDEVICE8W iface,
     JoystickGenericImpl *This = impl_from_IDirectInputDevice8W(iface);
     int size;
 
-    TRACE("%p->(%p)\n",iface,lpDIDevCaps);
+    TRACE("%p->(%p)\n",This,lpDIDevCaps);
 
     if (lpDIDevCaps == NULL) {
         WARN("invalid pointer\n");
@@ -544,7 +554,7 @@ HRESULT WINAPI JoystickWGenericImpl_GetProperty(LPDIRECTINPUTDEVICE8W iface, REF
 {
     JoystickGenericImpl *This = impl_from_IDirectInputDevice8W(iface);
 
-    TRACE("(%p,%s,%p)\n", iface, debugstr_guid(rguid), pdiph);
+    TRACE("(%p,%s,%p)\n", This, debugstr_guid(rguid), pdiph);
 
     if (TRACE_ON(dinput))
         _dump_DIPROPHEADER(pdiph);
@@ -627,7 +637,7 @@ HRESULT WINAPI JoystickAGenericImpl_GetDeviceInfo(
     DIPROPDWORD pd;
     DWORD index = 0;
 
-    TRACE("(%p,%p)\n", iface, pdidi);
+    TRACE("(%p,%p)\n", This, pdidi);
 
     if (pdidi == NULL) {
         WARN("invalid pointer\n");
@@ -772,7 +782,7 @@ HRESULT WINAPI JoystickWGenericImpl_BuildActionMap(LPDIRECTINPUTDEVICE8W iface,
     unsigned int i, j;
     BOOL has_actions = FALSE;
 
-    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", iface, lpdiaf, debugstr_w(lpszUserName), dwFlags);
+    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", This, lpdiaf, debugstr_w(lpszUserName), dwFlags);
 
     for (i=0; i < lpdiaf->dwNumActions; i++)
     {
@@ -850,7 +860,7 @@ HRESULT WINAPI JoystickWGenericImpl_SetActionMap(LPDIRECTINPUTDEVICE8W iface,
 {
     JoystickGenericImpl *This = impl_from_IDirectInputDevice8W(iface);
 
-    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", iface, lpdiaf, debugstr_w(lpszUserName), dwFlags);
+    FIXME("(%p)->(%p,%s,%08x): semi-stub !\n", This, lpdiaf, debugstr_w(lpszUserName), dwFlags);
 
     return _set_action_map(iface, lpdiaf, lpszUserName, dwFlags, This->base.data_format.wine_df);
 }

@@ -19,15 +19,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include "dshow.h"
-#include "wine/debug.h"
-#include "wine/unicode.h"
-#include "wine/strmbase.h"
-#include "uuids.h"
-#include "vfwmsgs.h"
-#include <assert.h>
+#include "strmbase_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(strmbase);
 
@@ -146,7 +138,7 @@ out:
 static void Copy_PinInfo(PIN_INFO * pDest, const PIN_INFO * pSrc)
 {
     /* avoid copying uninitialized data */
-    strcpyW(pDest->achName, pSrc->achName);
+    lstrcpyW(pDest->achName, pSrc->achName);
     pDest->dir = pSrc->dir;
     pDest->pFilter = pSrc->pFilter;
 }
@@ -296,11 +288,11 @@ HRESULT WINAPI BasePinImpl_QueryId(IPin * iface, LPWSTR * Id)
 
     TRACE("(%p)->(%p)\n", This, Id);
 
-    *Id = CoTaskMemAlloc((strlenW(This->pinInfo.achName) + 1) * sizeof(WCHAR));
+    *Id = CoTaskMemAlloc((lstrlenW(This->pinInfo.achName) + 1) * sizeof(WCHAR));
     if (!*Id)
         return E_OUTOFMEMORY;
 
-    strcpyW(*Id, This->pinInfo.achName);
+    lstrcpyW(*Id, This->pinInfo.achName);
 
     return S_OK;
 }
@@ -314,15 +306,14 @@ HRESULT WINAPI BasePinImpl_QueryAccept(IPin * iface, const AM_MEDIA_TYPE * pmt)
     return (This->pFuncsTable->pfnCheckMediaType(This, pmt) == S_OK ? S_OK : S_FALSE);
 }
 
-HRESULT WINAPI BasePinImpl_EnumMediaTypes(IPin * iface, IEnumMediaTypes ** ppEnum)
+HRESULT WINAPI BasePinImpl_EnumMediaTypes(IPin *iface, IEnumMediaTypes **enum_media_types)
 {
-    BasePin *This = impl_from_IPin(iface);
+    BasePin *pin = impl_from_IPin(iface);
 
-    TRACE("(%p)->(%p)\n", This, ppEnum);
+    TRACE("iface %p, enum_media_types %p.\n", iface, enum_media_types);
 
-    /* override this method to allow enumeration of your types */
-
-    return EnumMediaTypes_Construct(This, This->pFuncsTable->pfnGetMediaType, This->pFuncsTable->pfnGetMediaTypeVersion , ppEnum);
+    return EnumMediaTypes_Construct(pin, pin->pFuncsTable->pfnGetMediaType,
+            BasePinImpl_GetMediaTypeVersion, enum_media_types);
 }
 
 HRESULT WINAPI BasePinImpl_QueryInternalConnections(IPin * iface, IPin ** apPin, ULONG * cPin)
@@ -422,7 +413,7 @@ HRESULT WINAPI BaseOutputPinImpl_Connect(IPin * iface, IPin * pReceivePin, const
         /* if we have been a specific type to connect with, then we can either connect
          * with that or fail. We cannot choose different AM_MEDIA_TYPE */
         if (pmt && !IsEqualGUID(&pmt->majortype, &GUID_NULL) && !IsEqualGUID(&pmt->subtype, &GUID_NULL))
-            hr = This->pin.pFuncsTable->pfnAttemptConnection(&This->pin, pReceivePin, pmt);
+            hr = This->pFuncsTable->pfnAttemptConnection(This, pReceivePin, pmt);
         else
         {
             /* negotiate media type */
@@ -442,8 +433,8 @@ HRESULT WINAPI BaseOutputPinImpl_Connect(IPin * iface, IPin * pReceivePin, const
                     if (!IsEqualGUID(&FORMAT_None, &pmtCandidate->formattype)
                         && !IsEqualGUID(&GUID_NULL, &pmtCandidate->formattype))
                         assert(pmtCandidate->pbFormat);
-                    if (( !pmt || CompareMediaTypes(pmt, pmtCandidate, TRUE) ) &&
-                        (This->pin.pFuncsTable->pfnAttemptConnection(&This->pin, pReceivePin, pmtCandidate) == S_OK))
+                    if ((!pmt || CompareMediaTypes(pmt, pmtCandidate, TRUE))
+                            && This->pFuncsTable->pfnAttemptConnection(This, pReceivePin, pmtCandidate) == S_OK)
                     {
                         hr = S_OK;
                         DeleteMediaType(pmtCandidate);
@@ -466,8 +457,8 @@ HRESULT WINAPI BaseOutputPinImpl_Connect(IPin * iface, IPin * pReceivePin, const
                 {
                     assert(pmtCandidate);
                     dump_AM_MEDIA_TYPE(pmtCandidate);
-                    if (( !pmt || CompareMediaTypes(pmt, pmtCandidate, TRUE) ) &&
-                        (This->pin.pFuncsTable->pfnAttemptConnection(&This->pin, pReceivePin, pmtCandidate) == S_OK))
+                    if ((!pmt || CompareMediaTypes(pmt, pmtCandidate, TRUE))
+                            && This->pFuncsTable->pfnAttemptConnection(This, pReceivePin, pmtCandidate) == S_OK)
                     {
                         hr = S_OK;
                         DeleteMediaType(pmtCandidate);
@@ -648,31 +639,6 @@ HRESULT WINAPI BaseOutputPinImpl_Inactive(BaseOutputPin *This)
     return hr;
 }
 
-/* replaces OutputPin_DeliverDisconnect */
-HRESULT WINAPI BaseOutputPinImpl_BreakConnect(BaseOutputPin *This)
-{
-    HRESULT hr;
-
-    TRACE("(%p)->()\n", This);
-
-    EnterCriticalSection(This->pin.pCritSec);
-    {
-        if (!This->pin.pConnectedTo || !This->pMemInputPin)
-            hr = VFW_E_NOT_CONNECTED;
-        else
-        {
-            hr = IMemAllocator_Decommit(This->pAllocator);
-
-            if (SUCCEEDED(hr))
-                hr = IPin_Disconnect(This->pin.pConnectedTo);
-        }
-        IPin_Disconnect(&This->pin.IPin_iface);
-    }
-    LeaveCriticalSection(This->pin.pCritSec);
-
-    return hr;
-}
-
 HRESULT WINAPI BaseOutputPinImpl_InitAllocator(BaseOutputPin *This, IMemAllocator **pMemAlloc)
 {
     return CoCreateInstance(&CLSID_MemoryAllocator, NULL, CLSCTX_INPROC_SERVER, &IID_IMemAllocator, (LPVOID*)pMemAlloc);
@@ -707,9 +673,8 @@ HRESULT WINAPI BaseOutputPinImpl_DecideAllocator(BaseOutputPin *This, IMemInputP
 
 /* Function called as a helper to IPin_Connect */
 /* specific AM_MEDIA_TYPE - it cannot be NULL */
-HRESULT WINAPI BaseOutputPinImpl_AttemptConnection(BasePin* iface, IPin * pReceivePin, const AM_MEDIA_TYPE * pmt)
+HRESULT WINAPI BaseOutputPinImpl_AttemptConnection(BaseOutputPin *This, IPin *pReceivePin, const AM_MEDIA_TYPE *pmt)
 {
-    BaseOutputPin *This = impl_BaseOutputPin_from_BasePin(iface);
     HRESULT hr;
     IMemAllocator * pMemAlloc = NULL;
 
@@ -723,7 +688,7 @@ HRESULT WINAPI BaseOutputPinImpl_AttemptConnection(BasePin* iface, IPin * pRecei
     IPin_AddRef(pReceivePin);
     CopyMediaType(&This->pin.mtCurrent, pmt);
 
-    hr = IPin_ReceiveConnection(pReceivePin, &iface->IPin_iface, pmt);
+    hr = IPin_ReceiveConnection(pReceivePin, &This->pin.IPin_iface, pmt);
 
     /* get the IMemInputPin interface we will use to deliver samples to the
      * connected pin */
@@ -800,7 +765,7 @@ HRESULT WINAPI BaseOutputPin_Construct(const IPinVtbl *OutputPin_Vtbl, LONG outp
     }
 
     assert(outputpin_size >= sizeof(BaseOutputPin));
-    assert(vtbl->base.pfnAttemptConnection);
+    assert(vtbl->pfnAttemptConnection);
 
     pPinImpl = CoTaskMemAlloc(outputpin_size);
 

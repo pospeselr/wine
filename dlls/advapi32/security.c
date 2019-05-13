@@ -5964,6 +5964,64 @@ BOOL WINAPI FileEncryptionStatusA(LPCSTR lpFileName, LPDWORD lpStatus)
     return TRUE;
 }
 
+static NTSTATUS combine_dacls(ACL *parent, ACL *child, ACL **result)
+{
+    NTSTATUS status;
+    ACL *combined;
+    int i;
+
+    /* initialize a combined DACL containing both inherited and new ACEs */
+    combined = heap_alloc_zero(child->AclSize+parent->AclSize);
+    if (!combined)
+        return STATUS_NO_MEMORY;
+
+    status = RtlCreateAcl(combined, parent->AclSize+child->AclSize, ACL_REVISION);
+    if (status != STATUS_SUCCESS)
+    {
+        heap_free(combined);
+        return status;
+    }
+
+    /* copy the new ACEs */
+    for (i=0; i<child->AceCount; i++)
+    {
+        ACE_HEADER *ace;
+
+        if (!GetAce(child, i, (void*)&ace))
+            continue;
+        if (!AddAce(combined, ACL_REVISION, MAXDWORD, ace, ace->AceSize))
+            WARN("error adding new ACE\n");
+    }
+
+    /* copy the inherited ACEs */
+    for (i=0; i<parent->AceCount; i++)
+    {
+        ACE_HEADER *ace;
+
+        if (!GetAce(parent, i, (void*)&ace))
+            continue;
+        if (!(ace->AceFlags & (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE)))
+            continue;
+        if ((ace->AceFlags & (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE)) !=
+                (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE))
+        {
+            FIXME("unsupported flags: %x\n", ace->AceFlags);
+            continue;
+        }
+
+        if (ace->AceFlags & NO_PROPAGATE_INHERIT_ACE)
+            ace->AceFlags &= ~(OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE|NO_PROPAGATE_INHERIT_ACE);
+        ace->AceFlags &= ~INHERIT_ONLY_ACE;
+        ace->AceFlags |= INHERITED_ACE;
+
+        if (!AddAce(combined, ACL_REVISION, MAXDWORD, ace, ace->AceSize))
+            WARN("error adding inherited ACE\n");
+    }
+
+    *result = combined;
+    return STATUS_SUCCESS;
+}
+
 /******************************************************************************
  * SetSecurityInfo [ADVAPI32.@]
  */
@@ -6063,41 +6121,10 @@ DWORD WINAPI SetSecurityInfo(HANDLE handle, SE_OBJECT_TYPE ObjectType,
 
                     if (!err)
                     {
-                        int i;
-
-                        dacl = heap_alloc_zero(pDacl->AclSize+parent_dacl->AclSize);
-                        if (!dacl)
-                        {
-                            LocalFree(parent_sd);
-                            return ERROR_NOT_ENOUGH_MEMORY;
-                        }
-                        memcpy(dacl, pDacl, pDacl->AclSize);
-                        dacl->AclSize = pDacl->AclSize+parent_dacl->AclSize;
-
-                        for (i=0; i<parent_dacl->AceCount; i++)
-                        {
-                            ACE_HEADER *ace;
-
-                            if (!GetAce(parent_dacl, i, (void*)&ace))
-                                continue;
-                            if (!(ace->AceFlags & (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE)))
-                                continue;
-                            if ((ace->AceFlags & (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE)) !=
-                                    (OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE))
-                            {
-                                FIXME("unsupported flags: %x\n", ace->AceFlags);
-                                continue;
-                            }
-
-                            if (ace->AceFlags & NO_PROPAGATE_INHERIT_ACE)
-                                ace->AceFlags &= ~(OBJECT_INHERIT_ACE|CONTAINER_INHERIT_ACE|NO_PROPAGATE_INHERIT_ACE);
-                            ace->AceFlags &= ~INHERIT_ONLY_ACE;
-                            ace->AceFlags |= INHERITED_ACE;
-
-                            if(!AddAce(dacl, ACL_REVISION, MAXDWORD, ace, ace->AceSize))
-                                WARN("error adding inherited ACE\n");
-                        }
+                        status = combine_dacls(parent_dacl, pDacl, &dacl);
                         LocalFree(parent_sd);
+                        if (status != STATUS_SUCCESS)
+                            return RtlNtStatusToDosError(status);
                     }
                 }
                 else

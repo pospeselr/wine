@@ -418,6 +418,9 @@ static HRESULT source_reader_media_stream_state_handler(struct source_reader *re
             }
 
             LeaveCriticalSection(&reader->streams[i].cs);
+
+            WakeAllConditionVariable(&reader->streams[i].sample_event);
+
             break;
         }
     }
@@ -850,6 +853,15 @@ static HRESULT WINAPI src_reader_ReadSample(IMFSourceReader *iface, DWORD index,
         LeaveCriticalSection(&stream->cs);
 
         TRACE("Got sample %p.\n", *sample);
+
+        if (timestamp)
+        {
+            /* TODO: it's possible timestamp has to be set for some events.
+               For MEEndOfStream it's correct to return 0. */
+            *timestamp = 0;
+            if (*sample)
+                IMFSample_GetSampleTime(*sample, timestamp);
+        }
     }
 
     return S_OK;

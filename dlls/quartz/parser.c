@@ -46,7 +46,6 @@ static HRESULT WINAPI Parser_OutputPin_DecideBufferSize(BaseOutputPin *iface, IM
 static HRESULT WINAPI Parser_OutputPin_CheckMediaType(BasePin *pin, const AM_MEDIA_TYPE *pmt);
 static HRESULT WINAPI Parser_OutputPin_GetMediaType(BasePin *iface, int iPosition, AM_MEDIA_TYPE *pmt);
 static HRESULT WINAPI Parser_OutputPin_DecideAllocator(BaseOutputPin *This, IMemInputPin *pPin, IMemAllocator **pAlloc);
-static HRESULT WINAPI Parser_OutputPin_BreakConnect(BaseOutputPin *This);
 
 static inline ParserImpl *impl_from_IMediaSeeking( IMediaSeeking *iface )
 {
@@ -424,13 +423,11 @@ HRESULT WINAPI Parser_QueryVendorInfo(IBaseFilter * iface, LPWSTR *pVendorInfo)
 static const BaseOutputPinFuncTable output_BaseOutputFuncTable = {
     {
         Parser_OutputPin_CheckMediaType,
-        BaseOutputPinImpl_AttemptConnection,
-        BasePinImpl_GetMediaTypeVersion,
         Parser_OutputPin_GetMediaType
     },
+    BaseOutputPinImpl_AttemptConnection,
     Parser_OutputPin_DecideBufferSize,
     Parser_OutputPin_DecideAllocator,
-    Parser_OutputPin_BreakConnect
 };
 
 HRESULT Parser_AddPin(ParserImpl * This, const PIN_INFO * piOutput, ALLOCATOR_PROPERTIES * props, const AM_MEDIA_TYPE * amt)
@@ -469,6 +466,22 @@ HRESULT Parser_AddPin(ParserImpl * This, const PIN_INFO * piOutput, ALLOCATOR_PR
     return hr;
 }
 
+static HRESULT WINAPI break_connection(IPin *iface)
+{
+    Parser_OutputPin *pin = unsafe_impl_Parser_OutputPin_from_IPin(iface);
+    HRESULT hr;
+
+    if (!pin->pin.pin.pConnectedTo || !pin->pin.pMemInputPin)
+        hr = VFW_E_NOT_CONNECTED;
+    else
+    {
+        hr = IPin_Disconnect(pin->pin.pin.pConnectedTo);
+        IPin_Disconnect(iface);
+    }
+
+    return hr;
+}
+
 static HRESULT Parser_RemoveOutputPins(ParserImpl * This)
 {
     /* NOTE: should be in critical section when calling this function */
@@ -484,7 +497,7 @@ static HRESULT Parser_RemoveOutputPins(ParserImpl * This)
 
     for (i = 0; i < This->cStreams; i++)
     {
-        hr = ((BaseOutputPin *)ppOldPins[i + 1])->pFuncsTable->pfnBreakConnect((BaseOutputPin *)ppOldPins[i + 1]);
+        hr = break_connection(ppOldPins[i + 1]);
         TRACE("Disconnect: %08x\n", hr);
         IPin_Release(ppOldPins[i + 1]);
     }
@@ -609,26 +622,6 @@ static HRESULT WINAPI Parser_OutputPin_DecideAllocator(BaseOutputPin *iface, IMe
 
     return hr;
 }
-
-static HRESULT WINAPI Parser_OutputPin_BreakConnect(BaseOutputPin *This)
-{
-    HRESULT hr;
-
-    TRACE("(%p)->()\n", This);
-
-    EnterCriticalSection(This->pin.pCritSec);
-    if (!This->pin.pConnectedTo || !This->pMemInputPin)
-        hr = VFW_E_NOT_CONNECTED;
-    else
-    {
-        hr = IPin_Disconnect(This->pin.pConnectedTo);
-        IPin_Disconnect(&This->pin.IPin_iface);
-    }
-    LeaveCriticalSection(This->pin.pCritSec);
-
-    return hr;
-}
-
 
 static HRESULT WINAPI Parser_OutputPin_QueryInterface(IPin * iface, REFIID riid, LPVOID * ppv)
 {

@@ -108,7 +108,7 @@ static BOOL is_wow6432node( const UNICODE_STRING *name )
     static const WCHAR wow6432nodeW[] = {'W','o','w','6','4','3','2','N','o','d','e'};
 
     return (name->Length == sizeof(wow6432nodeW) &&
-            !memicmpW( name->Buffer, wow6432nodeW, ARRAY_SIZE( wow6432nodeW )));
+            !strncmpiW( name->Buffer, wow6432nodeW, ARRAY_SIZE( wow6432nodeW )));
 }
 
 /* open the Wow6432Node subkey of the specified key */
@@ -149,7 +149,7 @@ static NTSTATUS create_key( HKEY *retkey, ACCESS_MASK access, OBJECT_ATTRIBUTES 
 
         /* don't try to create registry root */
         if (!attr->RootDirectory && len > ARRAY_SIZE( registry_root ) &&
-            !memicmpW( buffer, registry_root, ARRAY_SIZE( registry_root )))
+            !strncmpiW( buffer, registry_root, ARRAY_SIZE( registry_root )))
             i += ARRAY_SIZE( registry_root );
 
         while (i < len && buffer[i] != '\\') i++;
@@ -3112,7 +3112,7 @@ LSTATUS WINAPI RegOpenUserClassesRoot(
  * avoid importing user32, which is higher level than advapi32. Helper for
  * RegLoadMUIString.
  */
-static int load_string(HINSTANCE hModule, UINT resId, LPWSTR pwszBuffer, INT cMaxChars)
+static LONG load_string(HINSTANCE hModule, UINT resId, LPWSTR pwszBuffer, INT cMaxChars, UINT *reqChars)
 {
     HGLOBAL hMemory;
     HRSRC hResource;
@@ -3125,17 +3125,18 @@ static int load_string(HINSTANCE hModule, UINT resId, LPWSTR pwszBuffer, INT cMa
 
     /* Load the resource into memory and get a pointer to it. */
     hResource = FindResourceW(hModule, MAKEINTRESOURCEW(LOWORD(resId >> 4) + 1), (LPWSTR)RT_STRING);
-    if (!hResource) return 0;
+    if (!hResource) return ERROR_FILE_NOT_FOUND;
     hMemory = LoadResource(hModule, hResource);
-    if (!hMemory) return 0;
+    if (!hMemory) return ERROR_FILE_NOT_FOUND;
     pString = LockResource(hMemory);
 
     /* Strings are length-prefixed. Lowest nibble of resId is an index. */
     idxString = resId & 0xf;
     while (idxString--) pString += *pString + 1;
+    *reqChars = *pString + 1;
 
-    /* If no buffer is given, return length of the string. */
-    if (!pwszBuffer) return *pString;
+    /* If no buffer is given, return here. */
+    if (!pwszBuffer) return ERROR_MORE_DATA;
 
     /* Else copy over the string, respecting the buffer size. */
     cMaxChars = (*pString < cMaxChars) ? *pString : (cMaxChars - 1);
@@ -3144,7 +3145,7 @@ static int load_string(HINSTANCE hModule, UINT resId, LPWSTR pwszBuffer, INT cMa
         pwszBuffer[cMaxChars] = '\0';
     }
 
-    return cMaxChars;
+    return ERROR_SUCCESS;
 }
 
 /******************************************************************************
@@ -3161,7 +3162,7 @@ static int load_string(HINSTANCE hModule, UINT resId, LPWSTR pwszBuffer, INT cMa
  *  cbBuffer   [I] Size of the destination buffer in bytes.
  *  pcbData    [O] Number of bytes written to pszBuffer (optional, may be NULL).
  *  dwFlags    [I] None supported yet.
- *  pszBaseDir [I] Not supported yet.
+ *  pszBaseDir [I] Base directory of loading path. If NULL, use the current directory.
  *
  * RETURNS
  *  Success: ERROR_SUCCESS,
@@ -3177,19 +3178,14 @@ LSTATUS WINAPI RegLoadMUIStringW(HKEY hKey, LPCWSTR pwszValue, LPWSTR pwszBuffer
     DWORD dwValueType, cbData;
     LPWSTR pwszTempBuffer = NULL, pwszExpandedBuffer = NULL;
     LONG result;
-        
+
     TRACE("(hKey = %p, pwszValue = %s, pwszBuffer = %p, cbBuffer = %d, pcbData = %p, "
           "dwFlags = %d, pwszBaseDir = %s)\n", hKey, debugstr_w(pwszValue), pwszBuffer,
           cbBuffer, pcbData, dwFlags, debugstr_w(pwszBaseDir));
 
     /* Parameter sanity checks. */
-    if (!hKey || !pwszBuffer)
+    if (!hKey || (!pwszBuffer && cbBuffer) || (cbBuffer % sizeof(WCHAR)))
         return ERROR_INVALID_PARAMETER;
-
-    if (pwszBaseDir && *pwszBaseDir) {
-        FIXME("BaseDir parameter not yet supported!\n");
-        return ERROR_INVALID_PARAMETER;
-    }
 
     /* Check for value existence and correctness of its type, allocate a buffer and load it. */
     result = RegQueryValueExW(hKey, pwszValue, NULL, &dwValueType, NULL, &cbData);
@@ -3215,7 +3211,7 @@ LSTATUS WINAPI RegLoadMUIStringW(HKEY hKey, LPCWSTR pwszValue, LPWSTR pwszBuffer
             result = ERROR_NOT_ENOUGH_MEMORY;
             goto cleanup;
         }
-        ExpandEnvironmentStringsW(pwszTempBuffer, pwszExpandedBuffer, cbData);
+        ExpandEnvironmentStringsW(pwszTempBuffer, pwszExpandedBuffer, cbData / sizeof(WCHAR));
     } else {
         pwszExpandedBuffer = heap_alloc(cbData);
         memcpy(pwszExpandedBuffer, pwszTempBuffer, cbData);
@@ -3226,9 +3222,13 @@ LSTATUS WINAPI RegLoadMUIStringW(HKEY hKey, LPCWSTR pwszValue, LPWSTR pwszBuffer
     result = ERROR_SUCCESS;
     if (*pwszExpandedBuffer != '@') { /* '@' is the prefix for resource based string entries. */
         lstrcpynW(pwszBuffer, pwszExpandedBuffer, cbBuffer / sizeof(WCHAR));
+        if (pcbData)
+            *pcbData = (strlenW(pwszExpandedBuffer) + 1) * sizeof(WCHAR);
     } else {
-        WCHAR *pComma = strrchrW(pwszExpandedBuffer, ',');
+        WCHAR *pComma = strrchrW(pwszExpandedBuffer, ','), *pNewBuffer;
+        const WCHAR backslashW[] = {'\\',0};
         UINT uiStringId;
+        DWORD baseDirLen;
         HMODULE hModule;
 
         /* Format of the expanded value is 'path_to_dll,-resId' */
@@ -3236,17 +3236,47 @@ LSTATUS WINAPI RegLoadMUIStringW(HKEY hKey, LPCWSTR pwszValue, LPWSTR pwszBuffer
             result = ERROR_BADKEY;
             goto cleanup;
         }
- 
+
         uiStringId = atoiW(pComma+2);
         *pComma = '\0';
 
-        hModule = LoadLibraryExW(pwszExpandedBuffer + 1, NULL,
+        /* Build a resource dll path. */
+        baseDirLen = pwszBaseDir ? strlenW(pwszBaseDir) : 0;
+        cbData = (baseDirLen + 1 + strlenW(pwszExpandedBuffer + 1) + 1) * sizeof(WCHAR);
+        pNewBuffer = heap_realloc(pwszTempBuffer, cbData);
+        if (!pNewBuffer) {
+            result = ERROR_NOT_ENOUGH_MEMORY;
+            goto cleanup;
+        }
+        pwszTempBuffer = pNewBuffer;
+        pwszTempBuffer[0] = '\0';
+        if (baseDirLen) {
+            strcpyW(pwszTempBuffer, pwszBaseDir);
+            if (pwszBaseDir[baseDirLen - 1] != '\\')
+                strcatW(pwszTempBuffer, backslashW);
+        }
+        strcatW(pwszTempBuffer, pwszExpandedBuffer + 1);
+
+        /* Verify the file existence. i.e. We don't rely on PATH variable */
+        if (GetFileAttributesW(pwszTempBuffer) == INVALID_FILE_ATTRIBUTES) {
+            result = ERROR_FILE_NOT_FOUND;
+            goto cleanup;
+        }
+
+        /* Load the file */
+        hModule = LoadLibraryExW(pwszTempBuffer, NULL,
                                  LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
-        if (!hModule || !load_string(hModule, uiStringId, pwszBuffer, cbBuffer/sizeof(WCHAR)))
+        if (hModule) {
+            DWORD reqChars;
+            result = load_string(hModule, uiStringId, pwszBuffer, cbBuffer/sizeof(WCHAR), &reqChars);
+            if (pcbData && (result == ERROR_SUCCESS || result == ERROR_MORE_DATA))
+                *pcbData = reqChars * sizeof(WCHAR);
+            FreeLibrary(hModule);
+        }
+        else
             result = ERROR_BADKEY;
-        FreeLibrary(hModule);
     }
- 
+
 cleanup:
     heap_free(pwszTempBuffer);
     heap_free(pwszExpandedBuffer);
@@ -3256,40 +3286,12 @@ cleanup:
 /******************************************************************************
  * RegLoadMUIStringA [ADVAPI32.@]
  *
- * See RegLoadMUIStringW
+ * Not implemented on native.
  */
 LSTATUS WINAPI RegLoadMUIStringA(HKEY hKey, LPCSTR pszValue, LPSTR pszBuffer, DWORD cbBuffer,
     LPDWORD pcbData, DWORD dwFlags, LPCSTR pszBaseDir)
 {
-    UNICODE_STRING valueW, baseDirW;
-    WCHAR *pwszBuffer;
-    DWORD cbData = cbBuffer * sizeof(WCHAR);
-    LONG result;
-
-    valueW.Buffer = baseDirW.Buffer = pwszBuffer = NULL;
-    if (!RtlCreateUnicodeStringFromAsciiz(&valueW, pszValue) ||
-        !RtlCreateUnicodeStringFromAsciiz(&baseDirW, pszBaseDir) ||
-        !(pwszBuffer = heap_alloc(cbData)))
-    {
-        result = ERROR_NOT_ENOUGH_MEMORY;
-        goto cleanup;
-    }
-
-    result = RegLoadMUIStringW(hKey, valueW.Buffer, pwszBuffer, cbData, NULL, dwFlags, 
-                               baseDirW.Buffer);
- 
-    if (result == ERROR_SUCCESS) {
-        cbData = WideCharToMultiByte(CP_ACP, 0, pwszBuffer, -1, pszBuffer, cbBuffer, NULL, NULL);
-        if (pcbData)
-            *pcbData = cbData;
-    }
-
-cleanup:
-    heap_free(pwszBuffer);
-    RtlFreeUnicodeString(&baseDirW);
-    RtlFreeUnicodeString(&valueW);
- 
-    return result;
+    return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
 /******************************************************************************
