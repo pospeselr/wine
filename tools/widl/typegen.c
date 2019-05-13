@@ -2860,9 +2860,9 @@ static unsigned int write_string_tfs(FILE *file, const attr_list_t *attrs,
         int pointer_type = get_pointer_fc_context(type, attrs, context);
         if (!pointer_type)
             pointer_type = FC_RP;
-        
+
         print_start_tfs_comment(file, decltype, *typestring_offset);
-        
+
         print_file(file, 2,"0x%x, 0x%x,\t/* %s%s */\n",
                    pointer_type, flag, string_of_type(pointer_type),
                    flag ? " [simple_pointer]" : "");
@@ -3533,7 +3533,7 @@ static unsigned int write_contexthandle_tfs(FILE *file,
     unsigned char flags = get_contexthandle_flags( current_iface, attrs, type, context == TYPE_CONTEXT_RETVAL );
 
     print_start_tfs_comment(file, decltype, start_offset);
-    
+
     if (flags & 0x80)  /* via ptr */
     {
         int pointer_type = get_pointer_fc( type, attrs, context == TYPE_CONTEXT_TOPLEVELPARAM );
@@ -4992,7 +4992,7 @@ error:
 void write_client_call_routine( FILE *file, const type_t *iface, const var_t *func,
                                 const char *prefix, unsigned int proc_offset )
 {
-    decl_type_t *retdecltype = type_function_get_retdeclspec(func->decltype.type);
+    decl_type_t *retdecltype = type_function_get_retdecltype(func->decltype.type);
     type_t *rettype = retdecltype->type;
     int has_ret = !is_void( rettype );
     const var_list_t *args = type_get_function_args( func->decltype.type );

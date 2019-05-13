@@ -20,7 +20,7 @@
 
 #include "config.h"
 #include "wine/port.h"
- 
+
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef HAVE_UNISTD_H
@@ -54,7 +54,7 @@ static void write_client_func_decl( const type_t *iface, const var_t *func )
 {
     const char *callconv = get_attrp(func->decltype.type->attrs, ATTR_CALLCONV);
     const var_list_t *args = type_get_function_args(func->decltype.type);
-    decl_type_t *retdecltype = type_function_get_retdeclspec(func->decltype.type);
+    decl_type_t *retdecltype = type_function_get_retdecltype(func->decltype.type);
 
     if (!callconv) callconv = "__cdecl";
     write_decltype_decl_left(client, retdecltype);

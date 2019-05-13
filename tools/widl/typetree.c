@@ -187,7 +187,7 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
     return t;
 }
 
-type_t* decltype_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace)
+type_t* type_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace)
 {
     type_t *a = NULL;
 
@@ -227,7 +227,7 @@ type_t *type_new_coclass(char *name)
     return type;
 }
 
-type_t *decltype_new_array(const char *name, const decl_type_t *element, int declptr,
+type_t *type_new_array(const char *name, const decl_type_t *element, int declptr,
                            unsigned int dim, expr_t *size_is, expr_t *length_is,
                            unsigned char ptr_default_fc)
 {
@@ -403,7 +403,7 @@ static int is_valid_bitfield_type(const type_t *type)
     }
 }
 
-type_t *decltype_new_bitfield(const decl_type_t *field, const expr_t *bits)
+type_t *type_new_bitfield(const decl_type_t *field, const expr_t *bits)
 {
     type_t *t;
 

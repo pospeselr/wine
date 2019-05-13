@@ -1193,7 +1193,7 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 static void decl_builtin_alias(const char *name, type_t *t)
 {
   decl_type_t decltype;
-  reg_type(decltype_new_alias(init_decltype(&decltype, t), name, &global_namespace), name, &global_namespace, 0);
+  reg_type(type_new_alias(init_decltype(&decltype, t), name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1266,7 +1266,7 @@ static attr_list_t *remove_attr(attr_list_t *lst, enum attr_type type)
     {
       list_remove(&attr->entry);
     }
-  return lst;	
+  return lst;
 }
 
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list)
@@ -1344,7 +1344,7 @@ static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t
       declspec->stgclass = left->stgclass;
     else if (left->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
-    
+
     if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
       declspec->typequalifier = left->typequalifier;
     else if (left->typequalifier != TYPE_QUALIFIER_NONE)
@@ -1364,7 +1364,7 @@ static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t
       declspec->stgclass = right->stgclass;
     else if (right->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
-    
+
     if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
       declspec->typequalifier = right->typequalifier;
     else if (right->typequalifier != TYPE_QUALIFIER_NONE)
@@ -1453,7 +1453,7 @@ static type_t *append_array(type_t *chain, expr_t *expr)
 
     /* An array is always a reference pointer unless explicitly marked otherwise
      * (regardless of what the default pointer attribute is). */
-    array = decltype_new_array(NULL, NULL, FALSE, expr->is_const ? expr->cval : 0,
+    array = type_new_array(NULL, NULL, FALSE, expr->is_const ? expr->cval : 0,
             expr->is_const ? NULL : expr, NULL, FC_RP);
 
     return append_chain_type(chain, array);
@@ -1548,8 +1548,8 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         return type;
     for (chain_type = chain; get_array_or_ptr_ref(chain_type); chain_type = get_array_or_ptr_ref(chain_type))
         ;
-		
-    if (is_ptr(chain_type)) 
+
+    if (is_ptr(chain_type))
         chain_decltype = &chain_type->details.pointer.ref;
     else if (is_array(chain_type))
         chain_decltype = &chain_type->details.array.elem;
@@ -1596,7 +1596,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
 
 
   if (decltype->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
-    if (!func_type) 
+    if (!func_type)
     {
       error_loc("inline attribute applied to non-function type\n");
     }
@@ -1606,10 +1606,10 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     }
   }
 
-  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's decltype 
+  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's decltype
    * unless the pointee already has const type qualifier*/
 
-  /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST 
+  /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST
    * in this block */
   if (!decl)
   {
@@ -1618,7 +1618,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     v->decltype.typequalifier = decltype->typequalifier;
   } else if (decl->bits) {
   	/* dealing with a bitfield, just pass it on */
-	  v->decltype.type = decltype_new_bitfield(decltype, decl->bits);
+	  v->decltype.type = type_new_bitfield(decltype, decl->bits);
   }
   else {
   	parser_warning("bits : %d\n", decl->bits != NULL);
@@ -1640,7 +1640,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
       v->decltype.type->attrs = remove_attr(v->decltype.type->attrs, ATTR_CONST);
       v->decltype.typequalifier = TYPE_QUALIFIER_CONST;
     }
-  } 
+  }
 
   v->decltype.stgclass = decltype->stgclass;
   v->attrs = attrs;
@@ -1669,7 +1669,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
-      
+
       if (!ptr_attr && top && (*pt)->details.pointer.def_fc != FC_RP)
       {
         /* FIXME: this is a horrible hack to cope with the issue that we
@@ -1734,13 +1734,13 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
             type_array_get_conformance(*ptype)->type != EXPR_VOID)
           error_loc("%s: cannot specify size_is for an already sized array\n", v->name);
         else
-          *ptype = decltype_new_array((*ptype)->name,
+          *ptype = type_new_array((*ptype)->name,
                                   type_array_get_element(*ptype), FALSE,
                                   0, dim, NULL, 0);
       }
       else if (is_ptr(*ptype))
       {
-        *ptype = decltype_new_array((*ptype)->name, type_pointer_get_ref(*ptype), TRUE,
+        *ptype = type_new_array((*ptype)->name, type_pointer_get_ref(*ptype), TRUE,
                                 0, dim, NULL, pointer_default);
       }
       else
@@ -1762,7 +1762,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     {
       if (is_array(*ptype))
       {
-        *ptype = decltype_new_array((*ptype)->name,
+        *ptype = type_new_array((*ptype)->name,
                                 type_array_get_element(*ptype),
                                 type_array_is_decl_as_ptr(*ptype),
                                 type_array_get_dim(*ptype),
@@ -1929,12 +1929,12 @@ static type_t *make_safearray(type_t *type)
   decl_type_t element_dt;
 
   init_decltype(&element_dt,
-                decltype_new_alias(
+                type_new_alias(
                   init_decltype(&aliasee_dt, type),
                   "SAFEARRAY",
                   &global_namespace));
 
-  return decltype_new_array(NULL, &element_dt, TRUE, 0,
+  return type_new_array(NULL, &element_dt, TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 
@@ -2136,7 +2136,7 @@ static type_t *reg_typedefs(decl_type_t *decltype, declarator_list_t *decls, att
                     cur->loc_info.line_number);
 
       name = declare_var(attrs, decltype, decl, 0);
-      cur = decltype_new_alias(&name->decltype, name->name, current_namespace);
+      cur = type_new_alias(&name->decltype, name->name, current_namespace);
       cur->attrs = attrs;
 
       if (is_incomplete(cur))

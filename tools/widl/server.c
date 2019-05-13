@@ -55,7 +55,7 @@ static void write_function_stub(const type_t *iface, const var_t *func, unsigned
     unsigned char explicit_fc, implicit_fc;
     int has_full_pointer = is_full_pointer_function(func);
     const var_t *handle_var = get_func_handle_var( iface, func, &explicit_fc, &implicit_fc );
-    decl_type_t *ret_decltype = type_function_get_retdeclspec(func->decltype.type);
+    decl_type_t *ret_decltype = type_function_get_retdecltype(func->decltype.type);
     type_t *ret_type = ret_decltype->type;
 
     if (is_interpreted_func( iface, func )) return;

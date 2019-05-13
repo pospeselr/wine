@@ -29,12 +29,11 @@ enum name_type {
     NAME_C
 };
 
-/* TODO: decltype_new_X shoudl be renamed back to type_new_X */
-type_t *decltype_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace);
-type_t *decltype_new_array(const char* name, const decl_type_t *decltype, int declptr,
+type_t *type_new_alias(const decl_type_t *decltype, const char *name, struct namespace *namespace);
+type_t *type_new_array(const char* name, const decl_type_t *decltype, int declptr,
                            unsigned int dim, expr_t *size_is, expr_t *length_is,
                            unsigned char ptr_default_fc);
-type_t *decltype_new_bitfield(const decl_type_t *decltype, const expr_t *bits);
+type_t *type_new_bitfield(const decl_type_t *decltype, const expr_t *bits);
 
 type_t *type_new_function(var_list_t *args);
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs);
@@ -59,7 +58,6 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 type_t *duptype(type_t *t, int dupname);
 
 /* un-alias the type until finding the non-alias type */
-/* TODO: probably ought to be a decl_type_t so we can get the type qualifier */
 static inline type_t *type_get_real_type(const type_t *type)
 {
     if (type->is_alias)
@@ -108,16 +106,14 @@ static inline var_t *type_function_get_retval(const type_t *type)
     return type->details.function->retval;
 }
 
-/* TODO: rename to type_function_get_retdecltype */
-static inline decl_type_t* type_function_get_retdeclspec(const type_t *type)
+static inline decl_type_t* type_function_get_retdecltype(const type_t *type)
 {
     return &(type_function_get_retval(type)->decltype);
 }
 
-/* TODO: declspecs -> decltype */
 static inline type_t *type_function_get_rettype(const type_t *type)
 {
-    return type_function_get_retdeclspec(type)->type;
+    return type_function_get_retdecltype(type)->type;
 }
 
 static inline var_list_t *type_enum_get_values(const type_t *type)
@@ -259,14 +255,6 @@ static inline expr_t *type_array_get_variance(const type_t *type)
     assert(type_get_type(type) == TYPE_ARRAY);
     return type->details.array.length_is;
 }
-
-/* TODO: add functions like type_array_get_element_type (and same for pointer and aliasee) so we can
- * remove all of the ->type we've had to add all over the place */
-/* TODO: 
-    type_pointer_get_ref_type
-    type_alias_get_aliasee_type
-    type_bitfield_whatever
-*/
 
 static inline decl_type_t *type_array_get_element(const type_t *type)
 {
