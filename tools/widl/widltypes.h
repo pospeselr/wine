@@ -466,6 +466,7 @@ struct _type_t {
   int typelib_idx;
   loc_info_t loc_info;
   unsigned int ignore : 1;
+  /* TODO: see how defined is used and how undefined types get resolved */
   unsigned int defined : 1;
   unsigned int written : 1;
   unsigned int user_types_registered : 1;

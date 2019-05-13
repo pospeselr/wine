@@ -65,7 +65,6 @@ static void write_line(FILE *f, int delta, const char *fmt, ...)
 
 int is_ptrchain_attr(const var_t *var, enum attr_type t)
 {
-    /* TODO: handle const and inlnie here (verify they aren't being passed in) */
     if (is_attr(var->attrs, t))
         return 1;
     else
@@ -507,7 +506,6 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   }
 }
 
-/* TODO: what is going on here with checking for t? */
 static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, const char *name)
 {
   type_t *t = dt->type;
@@ -563,7 +561,6 @@ static void write_type_def_or_decl(FILE *f, decl_type_t *dt, int field, const ch
   write_type_v(f, dt, field, FALSE, name);
 }
 
-/* TODO: take decltype */
 static void write_type_definition(FILE *f, type_t *t)
 {
     int in_namespace = t->namespace && !is_global_namespace(t->namespace);
@@ -588,7 +585,6 @@ static void write_type_definition(FILE *f, type_t *t)
     }
 }
 
-/* TODO: see which callers of this need to call the decltype version */
 void write_type_decl(FILE *f, type_t *t, const char *name)
 {
   decl_type_t dt;

@@ -178,7 +178,6 @@ type_t *type_new_function(var_list_t *args)
     return t;
 }
 
-/* TODO: this is wrong, the const attribute needs to be on a decltype with an instance of the type pointer :/ */
 type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t *attrs)
 {
     type_t *t = make_type(TYPE_POINTER);
@@ -419,7 +418,7 @@ type_t *decltype_new_bitfield(const decl_type_t *field, const expr_t *bits)
     t = make_type(TYPE_BITFIELD);
     t->details.bitfield.field = *field;
     t->details.bitfield.bits = bits;
-    return t;    
+    return t;
 }
 
 static int compute_method_indexes(type_t *iface)
@@ -501,7 +500,6 @@ type_t *type_coclass_define(type_t *coclass, ifref_list_t *ifaces)
     return coclass;
 }
 
-/* TODO: after resolving typedefs should be able to do pointer compare once duptype is gone */
 int type_is_equal(const type_t *type1, const type_t *type2)
 {
     if (type_get_type_detect_alias(type1) != type_get_type_detect_alias(type2))

@@ -1529,7 +1529,7 @@ static int is_allowed_range_type(const type_t *type)
         return FALSE;
     }
 }
-/* TODO: ref is technically a declspec now so see how this is used */
+
 static type_t *get_array_or_ptr_ref(type_t *type)
 {
     if (is_ptr(type))
@@ -1557,7 +1557,7 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         assert(0);
 
     chain_decltype->type = type;
-    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its declspec
+    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its decltype
      * typequalifier on the pointer */
     if (is_attr(type->attrs, ATTR_CONST)) {
       TRACE();
@@ -1583,8 +1583,7 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-/* TODO: declspec -> decltype */
-static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const declarator_t *decl,
+static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1593,17 +1592,17 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
   expr_t *dim;
   type_t **ptype;
   type_t *func_type = decl ? decl->func_type : NULL;
-  type_t *type = declspec->type;
+  type_t *type = decltype->type;
 
 
-  if (declspec->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+  if (decltype->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     if (!func_type) 
     {
       error_loc("inline attribute applied to non-function type\n");
     }
     else
     {
-      v->decltype.funcspecifier = declspec->funcspecifier;
+      v->decltype.funcspecifier = decltype->funcspecifier;
     }
   }
 
@@ -1612,23 +1611,22 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
 
   /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST 
    * in this block */
-  /* TODO: maybe the original make_decl_spec should say the same since we're having to re-insert ATTR_CONST here */
   if (!decl)
   {
     TRACE();
     /* simplest case, no pointers to deal with here */
-    v->decltype.typequalifier = declspec->typequalifier;
+    v->decltype.typequalifier = decltype->typequalifier;
   } else if (decl->bits) {
   	/* dealing with a bitfield, just pass it on */
-	  v->decltype.type = decltype_new_bitfield(declspec, decl->bits);
+	  v->decltype.type = decltype_new_bitfield(decltype, decl->bits);
   }
   else {
   	parser_warning("bits : %d\n", decl->bits != NULL);
     /* here we're dealing with a pointerish type chain, so we need to pull
-     * the typequalifier off of the declspec and stick them in the type's attr list
+     * the typequalifier off of the decltype and stick them in the type's attr list
      */
     TRACE();
-    if (declspec->typequalifier == TYPE_QUALIFIER_CONST) {
+    if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
       TRACE();
       type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
       assert(is_attr(type->attrs, ATTR_CONST));
@@ -1636,7 +1634,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
 
     v->decltype.type = append_chain_type(decl->type, type);
     /* finally pull the ATTR_CONST attribute off the head of the pointerish type chain,
-     * and stick on the var's declspec */
+     * and stick on the var's decltype */
     if (is_attr(v->decltype.type->attrs, ATTR_CONST)) {
       TRACE();
       v->decltype.type->attrs = remove_attr(v->decltype.type->attrs, ATTR_CONST);
@@ -1644,7 +1642,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
     }
   } 
 
-  v->decltype.stgclass = declspec->stgclass;
+  v->decltype.stgclass = decltype->stgclass;
   v->attrs = attrs;
 
   /* check for pointer attribute being applied to non-pointer, non-array
@@ -1783,9 +1781,6 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *declspec, const
       error_loc("%s: too many expressions in length_is attribute\n", v->name);
   }
 
-  /* TODO: this should also be refactored so that we're pulling the ATTR_CONST off the return type
-   * and then populating the function's return type's decltype, rather than moving it around */
-
   /* v->type is currently pointing to the type on the left-side of the
    * declaration, so we need to fix this up so that it is the return type of the
    * function and make v->type point to the function side of the declaration */
@@ -1828,14 +1823,9 @@ static var_list_t *set_var_types(attr_list_t *attrs, decl_type_t *decltype, decl
   declarator_t *decl, *next;
   var_list_t *var_list = NULL;
 
-  /* TODO: kill these parser warnings */
-  parser_warning("type name : %s\n", decltype->type->name);
-  
   LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
   {
     var_t *var = declare_var(attrs, decltype, decl, 0);
-    parser_warning("var name : %s\n", var->name);
-    parser_warning("var const : %d\n", var->decltype.typequalifier);
     var_list = append_var(var_list, var);
     free(decl);
   }
@@ -2078,7 +2068,6 @@ static void fix_incomplete(void)
   }
 }
 
-/* TODO: see how this behaves now that duptype is mostly gone */
 static void fix_incomplete_types(type_t *complete_type)
 {
   struct typenode *tn, *next;
@@ -2887,7 +2876,6 @@ static void check_remoting_args(const var_t *func)
 
     if (type_get_type(type_function_get_rettype(func->decltype.type)) != TYPE_VOID)
     {
-        /* TODO: make_var/free_var here? */
         var_t var;
         var = *func;
         var.decltype.type = type_function_get_rettype(func->decltype.type);

@@ -33,7 +33,6 @@ extern const char* get_name(const var_t *v);
 extern void write_decltype_left(FILE *h, decl_type_t *dt, enum name_type name_type, int declonly);
 extern void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly);
 extern void write_type_right(FILE *h, type_t *t, int is_field);
-/* TODO: kill thsi functin? */
 extern void write_type_decl(FILE *f, type_t *t, const char *name);
 extern void write_decltype_decl(FILE *f, decl_type_t *dt, const char *name);\
 extern void write_decltype_decl_left(FILE *f, decl_type_t *dt);
@@ -51,7 +50,6 @@ extern int need_proxy_file(const statement_list_t *stmts);
 extern int need_proxy_delegation(const statement_list_t *stmts);
 extern int need_inline_stubs_file(const statement_list_t *stmts);
 extern const var_t *is_callas(const attr_list_t *list);
-/* TODO: args don't get const'd */
 extern void write_args(FILE *h, const var_list_t *arg, const char *name, int obj, int do_indent);
 extern const type_t* get_explicit_generic_handle_type(const var_t* var);
 extern const var_t *get_func_handle_var( const type_t *iface, const var_t *func,

@@ -108,6 +108,7 @@ static inline var_t *type_function_get_retval(const type_t *type)
     return type->details.function->retval;
 }
 
+/* TODO: rename to type_function_get_retdecltype */
 static inline decl_type_t* type_function_get_retdeclspec(const type_t *type)
 {
     return &(type_function_get_retval(type)->decltype);
