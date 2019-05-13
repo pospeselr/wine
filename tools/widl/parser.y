@@ -60,8 +60,8 @@ static void fix_incomplete_types(type_t *complete_type);
 static str_list_t *append_str(str_list_t *list, char *str);
 static attr_list_t *append_attr(attr_list_t *list, attr_t *attr);
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list);
-static decl_type_t *make_decl_spec(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass);
-static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
+static decl_type_t *make_decl_type(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass);
+static decl_type_t *make_decl_type2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
@@ -158,7 +158,7 @@ static typelib_t *current_typelib;
 	interface_info_t ifinfo;
 	typelib_t *typelib;
 	struct _import_t *import;
-	struct _decl_type_t *declspec;
+	struct _decl_type_t *decltype;
 	enum storage_class stgclass;
 }
 
@@ -269,7 +269,7 @@ static typelib_t *current_typelib;
 %type <expr_list> m_exprs /* exprs expr_list */ expr_list_int_const
 %type <ifinfo> interfacehdr
 %type <stgclass> storage_cls_spec
-%type <declspec> decl_spec decl_spec_no_type m_decl_spec_no_type
+%type <decltype> decl_spec decl_spec_no_type m_decl_spec_no_type
 %type <type> inherit interface interfacedef interfacedec
 %type <type> dispinterface dispinterfacehdr dispinterfacedef
 %type <type> module modulehdr moduledef
@@ -961,9 +961,9 @@ m_type_qual_list:				{ $$ = NULL; }
 	| m_type_qual_list type_qualifier	{ $$ = append_attr($1, $2); }
 	;
 
-decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_spec($1, $2, NULL, NULL, STG_NONE); }
+decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_type($1, $2, NULL, NULL, STG_NONE); }
 	| decl_spec_no_type type m_decl_spec_no_type
-						{ $$ = make_decl_spec($2, $1, $3, NULL, STG_NONE); }
+						{ $$ = make_decl_type($2, $1, $3, NULL, STG_NONE); }
 	;
 
 m_decl_spec_no_type:				{ $$ = NULL; }
@@ -971,9 +971,9 @@ m_decl_spec_no_type:				{ $$ = NULL; }
 	;
 
 decl_spec_no_type:
-	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
-	| function_specifier m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
-	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, NULL, $1); }
+	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_type(NULL, $2, NULL, $1, STG_NONE); }
+	| function_specifier m_decl_spec_no_type  { $$ = make_decl_type(NULL, $2, NULL, $1, STG_NONE); }
+	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_type(NULL, $2, NULL, NULL, $1); }
 	;
 
 declarator:
@@ -1306,8 +1306,7 @@ static attr_list_t *map_attrs(const attr_list_t *list, map_attrs_filter_t filter
   return new_list;
 }
 
-/* TODO: probably bring back the original implementation here */
-static decl_type_t *make_decl_spec(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass)
+static decl_type_t *make_decl_type(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass)
 {
   enum type_qualifier typequalifier = TYPE_QUALIFIER_NONE;
   enum function_specifier funcspecifier = FUNCTION_SPECIFIER_NONE;
@@ -1322,56 +1321,56 @@ static decl_type_t *make_decl_spec(type_t *type, decl_type_t *left, decl_type_t 
       funcspecifier = FUNCTION_SPECIFIER_INLINE;
   }
 
-  return make_decl_spec2(type, left, right, stgclass, typequalifier, funcspecifier);
+  return make_decl_type2(type, left, right, stgclass, typequalifier, funcspecifier);
 }
 
-static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+static decl_type_t *make_decl_type2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
 {
-  decl_type_t *declspec = left ? left : right;
+  decl_type_t *decltype = left ? left : right;
 
-  if (!declspec)
+  if (!decltype)
   {
-    declspec = xmalloc(sizeof(*declspec));
-    declspec->type = NULL;
-    declspec->stgclass = STG_NONE;
-    declspec->typequalifier = TYPE_QUALIFIER_NONE;
-    declspec->funcspecifier = FUNCTION_SPECIFIER_NONE;
+    decltype = xmalloc(sizeof(*decltype));
+    decltype->type = NULL;
+    decltype->stgclass = STG_NONE;
+    decltype->typequalifier = TYPE_QUALIFIER_NONE;
+    decltype->funcspecifier = FUNCTION_SPECIFIER_NONE;
   }
-  declspec->type = type;
-  if (left && declspec != left)
+  decltype->type = type;
+  if (left && decltype != left)
   {
-    if (declspec->stgclass == STG_NONE)
-      declspec->stgclass = left->stgclass;
+    if (decltype->stgclass == STG_NONE)
+      decltype->stgclass = left->stgclass;
     else if (left->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
 
-    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
-      declspec->typequalifier = left->typequalifier;
+    if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
+      decltype->typequalifier = left->typequalifier;
     else if (left->typequalifier != TYPE_QUALIFIER_NONE)
       error_loc("only one type qualifier can be specified\n");
 
-    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
-      declspec->funcspecifier = left->funcspecifier;
+    if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      decltype->funcspecifier = left->funcspecifier;
     else if (left->funcspecifier != FUNCTION_SPECIFIER_NONE)
       error_loc("only one function specifier can be specified\n");
 
     assert(!left->type);
     free(left);
   }
-  if (right && declspec != right)
+  if (right && decltype != right)
   {
-    if (declspec->stgclass == STG_NONE)
-      declspec->stgclass = right->stgclass;
+    if (decltype->stgclass == STG_NONE)
+      decltype->stgclass = right->stgclass;
     else if (right->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
 
-    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
-      declspec->typequalifier = right->typequalifier;
+    if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
+      decltype->typequalifier = right->typequalifier;
     else if (right->typequalifier != TYPE_QUALIFIER_NONE)
       error_loc("only one type qualifier can be specified\n");
 
-    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
-      declspec->funcspecifier = right->funcspecifier;
+    if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      decltype->funcspecifier = right->funcspecifier;
     else if (right->funcspecifier != FUNCTION_SPECIFIER_NONE)
       error_loc("only one function specifier can be specified\n");
 
@@ -1379,22 +1378,22 @@ static decl_type_t *make_decl_spec2(type_t *type, decl_type_t *left, decl_type_t
     free(right);
   }
 
-  if (declspec->stgclass == STG_NONE)
-    declspec->stgclass = stgclass;
+  if (decltype->stgclass == STG_NONE)
+    decltype->stgclass = stgclass;
   else if (stgclass != STG_NONE)
     error_loc("only one storage class can be specified\n");
 
-  if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
-    declspec->typequalifier = typequalifier;
+  if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
+    decltype->typequalifier = typequalifier;
   else if (typequalifier != TYPE_QUALIFIER_NONE)
     error_loc("only one type qualifier can be specified\n");
 
-  if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
-    declspec->funcspecifier = funcspecifier;
+  if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
+    decltype->funcspecifier = funcspecifier;
   else if (funcspecifier != FUNCTION_SPECIFIER_NONE)
     error_loc("only one function specifier can be specified\n");
 
-  return declspec;
+  return decltype;
 }
 
 static attr_t *make_attr(enum attr_type type)
