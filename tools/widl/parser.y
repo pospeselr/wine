@@ -1560,7 +1560,6 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
     /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its decltype
      * typequalifier on the pointer */
     if (is_attr(type->attrs, ATTR_CONST)) {
-      TRACE();
       type->attrs = remove_attr(type->attrs, ATTR_CONST);
       chain_decltype->typequalifier = TYPE_QUALIFIER_CONST;
     }
@@ -1613,7 +1612,6 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
    * in this block */
   if (!decl)
   {
-    TRACE();
     /* simplest case, no pointers to deal with here */
     v->decltype.typequalifier = decltype->typequalifier;
   } else if (decl->bits) {
@@ -1621,13 +1619,10 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
 	  v->decltype.type = type_new_bitfield(decltype, decl->bits);
   }
   else {
-  	parser_warning("bits : %d\n", decl->bits != NULL);
     /* here we're dealing with a pointerish type chain, so we need to pull
      * the typequalifier off of the decltype and stick them in the type's attr list
      */
-    TRACE();
     if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
-      TRACE();
       type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
       assert(is_attr(type->attrs, ATTR_CONST));
     }
@@ -1636,7 +1631,6 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     /* finally pull the ATTR_CONST attribute off the head of the pointerish type chain,
      * and stick on the var's decltype */
     if (is_attr(v->decltype.type->attrs, ATTR_CONST)) {
-      TRACE();
       v->decltype.type->attrs = remove_attr(v->decltype.type->attrs, ATTR_CONST);
       v->decltype.typequalifier = TYPE_QUALIFIER_CONST;
     }
@@ -1666,19 +1660,10 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     {
       if (ptr_attr && ptr_attr != FC_UP &&
           type_get_type(type_pointer_get_ref_type(ptr)) == TYPE_INTERFACE)
+      {
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
-
-      if (!ptr_attr && top && (*pt)->details.pointer.def_fc != FC_RP)
-      {
-        /* FIXME: this is a horrible hack to cope with the issue that we
-         * store an offset to the typeformat string in the type object, but
-         * two typeformat strings may be written depending on whether the
-         * pointer is a toplevel parameter or not */
-        TRACE();
-        *pt = duptype(*pt, 1);
-        parser_warning("var name : %s\n", v->name);
       }
     }
     else if (ptr_attr)
@@ -1798,9 +1783,6 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
     ft->details.function->retval->decltype.type = return_type;
     ft->details.function->retval->decltype.typequalifier = typequalifier;
-
-    parser_warning("function retval const : %d\n", typequalifier == TYPE_QUALIFIER_CONST);
-
 
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
@@ -2113,11 +2095,6 @@ static type_t *reg_typedefs(decl_type_t *decltype, declarator_list_t *decls, att
     if (decl->var->name) {
       type_t *cur;
       var_t *name;
-
-      parser_warning("name : %s\n", decl->var->name);
-      parser_warning(" decltype->stgclass : %d\n", decltype->stgclass);
-      parser_warning(" decltype->typequalifier : %d\n", decltype->typequalifier);
-      parser_warning(" decltype->funcspecifier : %d\n", decltype->funcspecifier);
 
       cur = find_type(decl->var->name, current_namespace, 0);
 
