@@ -21,9 +21,6 @@
 #ifndef __WIDL_WIDL_H
 #define __WIDL_WIDL_H
 
-/* TODO: remove TRACE */
-#define TRACE(...) parser_warning("%s:%d\n", __FUNCTION__, __LINE__)
-
 #include "widltypes.h"
 
 #include <time.h>

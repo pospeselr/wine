@@ -126,7 +126,7 @@ decl_type_t *get_attrdt(const attr_list_t *list, enum attr_type t)
     assert(t == ATTR_WIREMARSHAL);
     if (list) LIST_FOR_EACH_ENTRY( attr, list, const attr_t, entry )
         if (attr->type == t) return (decl_type_t*)&attr->u.dtval;
-    return 0;
+    return NULL;
 }
 
 static void write_guid(FILE *f, const char *guid_prefix, const char *name, const UUID *uuid)
@@ -1438,6 +1438,7 @@ static void write_function_proto(FILE *header, const type_t *iface, const var_t 
   const char *callconv = get_attrp(fun->decltype.type->attrs, ATTR_CALLCONV);
 
   if (!callconv) callconv = "__cdecl";
+  /* FIXME: do we need to handle call_as? */
   write_decltype_decl_left(header, type_function_get_retdecltype(fun->decltype.type));
   if (fun->decltype.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     fprintf(header, " inline");

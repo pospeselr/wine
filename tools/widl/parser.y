@@ -1260,7 +1260,7 @@ static attr_list_t *move_attr(attr_list_t *dst, attr_list_t *src, enum attr_type
 
 static attr_list_t *remove_attr(attr_list_t *lst, enum attr_type type)
 {
-	attr_t *attr;
+  attr_t *attr;
   LIST_FOR_EACH_ENTRY(attr, lst, attr_t, entry)
     if (attr->type == type)
     {
@@ -1540,8 +1540,8 @@ static type_t *get_array_or_ptr_ref(type_t *type)
 
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
-    type_t *chain_type;
-    decl_type_t *chain_decltype;
+    type_t *chain_type = NULL;
+    decl_type_t *chain_decltype = NULL;
 
     if (!chain)
         return type;
@@ -1614,8 +1614,8 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
     /* simplest case, no pointers to deal with here */
     v->decltype.typequalifier = decltype->typequalifier;
   } else if (decl->bits) {
-  	/* dealing with a bitfield, just pass it on */
-	  v->decltype.type = type_new_bitfield(decltype, decl->bits);
+    /* dealing with a bitfield, just pass it on */
+    v->decltype.type = type_new_bitfield(decltype, decl->bits);
   }
   else {
     /* here we're dealing with a pointerish type chain, so we need to pull
@@ -1910,10 +1910,10 @@ static type_t *make_safearray(type_t *type)
   decl_type_t element_dt;
 
   init_decltype(&element_dt,
-                type_new_alias(
-                  init_decltype(&aliasee_dt, type),
-                  "SAFEARRAY",
-                  &global_namespace));
+    type_new_alias(
+      init_decltype(&aliasee_dt, type),
+      "SAFEARRAY",
+      &global_namespace));
 
   return type_new_array(NULL, &element_dt, TRUE, 0,
                         NULL, NULL, FC_RP);

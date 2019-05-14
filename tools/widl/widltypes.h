@@ -458,7 +458,7 @@ struct _type_t {
     struct basic_details basic;
     struct pointer_details pointer;
     struct bitfield_details bitfield;
-    struct typedef_details alias; /* typedef is a keyword oh well */
+    struct typedef_details alias;
   } details;
   const char *c_name;
   unsigned int typestring_offset;
@@ -466,7 +466,6 @@ struct _type_t {
   int typelib_idx;
   loc_info_t loc_info;
   unsigned int ignore : 1;
-  /* TODO: see how defined is used and how undefined types get resolved */
   unsigned int defined : 1;
   unsigned int written : 1;
   unsigned int user_types_registered : 1;
@@ -657,7 +656,5 @@ static inline decl_type_t* init_decltype(decl_type_t *decltype, type_t *type)
     decltype->funcspecifier=FUNCTION_SPECIFIER_NONE;
     return decltype;
 }
-
-
 
 #endif

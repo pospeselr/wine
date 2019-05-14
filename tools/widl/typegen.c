@@ -3241,14 +3241,15 @@ static unsigned int write_struct_tfs(FILE *file, decl_type_t *decltype,
         type->ptrdesc = *tfsoff;
         if (fields) LIST_FOR_EACH_ENTRY(f, fields, const var_t, entry)
         {
-            type_t *ft = f->decltype.type;
+            decl_type_t *fdt = (decl_type_t*)&f->decltype;
+            type_t *ft = fdt->type;
             switch (typegen_detect_type(ft, f->attrs, TDT_IGNORE_STRINGS))
             {
             case TGT_POINTER:
                 if (is_string_type(f->attrs, ft))
-                    write_string_tfs(file, f->attrs, (decl_type_t*)&f->decltype, TYPE_CONTEXT_CONTAINER, f->name, tfsoff);
+                    write_string_tfs(file, f->attrs, fdt, TYPE_CONTEXT_CONTAINER, f->name, tfsoff);
                 else
-                    write_pointer_tfs(file, f->attrs, (decl_type_t*)&f->decltype,
+                    write_pointer_tfs(file, f->attrs, fdt,
                                       type_pointer_get_ref_type(ft)->typestring_offset,
                                       TYPE_CONTEXT_CONTAINER, tfsoff);
                 break;
