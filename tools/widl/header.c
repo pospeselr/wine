@@ -43,7 +43,7 @@ user_type_list_t user_type_list = LIST_INIT(user_type_list);
 context_handle_list_t context_handle_list = LIST_INIT(context_handle_list);
 generic_handle_list_t generic_handle_list = LIST_INIT(generic_handle_list);
 
-static void write_type_def_or_decl(FILE *f, decl_type_t *dt, int field, const char *name);
+static void write_type_def_or_decl(FILE *f, decl_spec_t *ds, int field, const char *name);
 
 static void indent(FILE *h, int delta)
 {
@@ -69,7 +69,7 @@ int is_ptrchain_attr(const var_t *var, enum attr_type t)
         return 1;
     else
     {
-        type_t *type = var->decltype.type;
+        type_t *type = var->declspec.type;
         for (;;)
         {
             if (is_attr(type->attrs, t))
@@ -120,12 +120,12 @@ unsigned int get_attrv(const attr_list_t *list, enum attr_type t)
     return 0;
 }
 
-decl_type_t *get_attrdt(const attr_list_t *list, enum attr_type t)
+decl_spec_t *get_attrds(const attr_list_t *list, enum attr_type t)
 {
     const attr_t *attr;
     assert(t == ATTR_WIREMARSHAL);
     if (list) LIST_FOR_EACH_ENTRY( attr, list, const attr_t, entry )
-        if (attr->type == t) return (decl_type_t*)&attr->u.dtval;
+        if (attr->type == t) return (decl_spec_t*)&attr->u.dsval;
     return NULL;
 }
 
@@ -213,9 +213,9 @@ static void write_fields(FILE *h, var_list_t *fields)
     if (!fields) return;
 
     LIST_FOR_EACH_ENTRY( v, fields, var_t, entry ) {
-        if (!v || !v->decltype.type) continue;
+        if (!v || !v->declspec.type) continue;
 
-        switch(type_get_type_detect_alias(v->decltype.type)) {
+        switch(type_get_type_detect_alias(v->declspec.type)) {
         case TYPE_STRUCT:
         case TYPE_ENCAPSULATED_UNION:
             nameless_struct_cnt++;
@@ -229,12 +229,12 @@ static void write_fields(FILE *h, var_list_t *fields)
     }
 
     LIST_FOR_EACH_ENTRY( v, fields, var_t, entry ) {
-        if (!v || !v->decltype.type) continue;
+        if (!v || !v->declspec.type) continue;
 
         indent(h, 0);
         name = v->name;
 
-        switch(type_get_type_detect_alias(v->decltype.type)) {
+        switch(type_get_type_detect_alias(v->declspec.type)) {
         case TYPE_STRUCT:
         case TYPE_ENCAPSULATED_UNION:
             if(!v->name) {
@@ -261,7 +261,7 @@ static void write_fields(FILE *h, var_list_t *fields)
         default:
             ;
         }
-        write_type_def_or_decl(h, &v->decltype, TRUE, name);
+        write_type_def_or_decl(h, &v->declspec, TRUE, name);
         fprintf(h, ";\n");
     }
 }
@@ -303,16 +303,16 @@ static void write_pointer_left(FILE *h, type_t *ref)
     fprintf(h, "*");
 }
 
-void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int declonly)
+void write_declspec_left(FILE* h, decl_spec_t *ds, enum name_type name_type, int declonly)
 {
   const char *name;
-  type_t *t = dt->type;
+  type_t *t = ds->type;
 
   if (!h) return;
 
   name = type_get_name(t, name_type);
 
-  if ((dt->typequalifier == TYPE_QUALIFIER_CONST) &&
+  if ((ds->typequalifier == TYPE_QUALIFIER_CONST) &&
       (type_is_alias(t) || !is_ptr(t))) {
     fprintf(h, "const ");
   }
@@ -362,10 +362,10 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
         break;
       case TYPE_POINTER:
       {
-        write_decltype_left(h, type_pointer_get_ref(t), name_type, declonly);
+        write_declspec_left(h, type_pointer_get_ref(t), name_type, declonly);
         write_pointer_left(h, type_pointer_get_ref_type(t));
 
-        if (dt->typequalifier == TYPE_QUALIFIER_CONST) {
+        if (ds->typequalifier == TYPE_QUALIFIER_CONST) {
           fprintf(h, "const ");
         }
 
@@ -376,7 +376,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
           fprintf(h, "%s", t->name);
         else
         {
-          write_decltype_left(h, type_array_get_element(t), name_type, declonly);
+          write_declspec_left(h, type_array_get_element(t), name_type, declonly);
           if (type_array_is_decl_as_ptr(t))
             write_pointer_left(h, type_array_get_element_type(t));
         }
@@ -438,7 +438,7 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
         fprintf(h, "void");
         break;
       case TYPE_BITFIELD:
-          write_decltype_left(h, type_bitfield_get_field(t), name_type, declonly);
+          write_declspec_left(h, type_bitfield_get_field(t), name_type, declonly);
         break;
       case TYPE_ALIAS:
       case TYPE_FUNCTION:
@@ -451,8 +451,8 @@ void write_decltype_left(FILE* h, decl_type_t *dt, enum name_type name_type, int
 
 void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
 {
-  decl_type_t dt;
-  write_decltype_left(h, init_decltype(&dt, t), name_type, declonly);
+  decl_spec_t ds;
+  write_declspec_left(h, init_declspec(&ds, t), name_type, declonly);
 }
 
 void write_type_right(FILE *h, type_t *t, int is_field)
@@ -506,17 +506,17 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   }
 }
 
-static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, const char *name)
+static void write_type_v(FILE *h, decl_spec_t *ds, int is_field, int declonly, const char *name)
 {
-  type_t *t = dt->type;
+  type_t *t = ds->type;
   type_t *pt = NULL;
-  decl_type_t *dpt = NULL;
+  decl_spec_t *dpt = NULL;
   int ptr_level = 0;
 
   if (!h) return;
 
   if (t) {
-    for (dpt = dt; is_ptr(dpt->type); dpt = type_pointer_get_ref(dpt->type), ptr_level++)
+    for (dpt = ds; is_ptr(dpt->type); dpt = type_pointer_get_ref(dpt->type), ptr_level++)
       ;
     pt = dpt->type;
 
@@ -524,17 +524,17 @@ static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, c
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      if (!is_ptr(dt->type) && dt->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+      if (!is_ptr(ds->type) && ds->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
         fprintf(h, "inline ");
       }
-      write_decltype_left(h, type_function_get_retdecltype(pt), NAME_DEFAULT, declonly);
+      write_declspec_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly);
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
       if (callconv) fprintf(h, "%s ", callconv);
       for (i = 0; i < ptr_level; i++)
         fputc('*', h);
     } else {
-      write_decltype_left(h, dt, NAME_DEFAULT, declonly);
+      write_declspec_left(h, ds, NAME_DEFAULT, declonly);
     }
   }
 
@@ -556,9 +556,9 @@ static void write_type_v(FILE *h, decl_type_t *dt, int is_field, int declonly, c
   }
 }
 
-static void write_type_def_or_decl(FILE *f, decl_type_t *dt, int field, const char *name)
+static void write_type_def_or_decl(FILE *f, decl_spec_t *ds, int field, const char *name)
 {
-  write_type_v(f, dt, field, FALSE, name);
+  write_type_v(f, ds, field, FALSE, name);
 }
 
 static void write_type_definition(FILE *f, type_t *t)
@@ -587,18 +587,18 @@ static void write_type_definition(FILE *f, type_t *t)
 
 void write_type_decl(FILE *f, type_t *t, const char *name)
 {
-  decl_type_t dt;
-  write_decltype_decl(f, init_decltype(&dt, t), name);
+  decl_spec_t ds;
+  write_declspec_decl(f, init_declspec(&ds, t), name);
 }
 
-void write_decltype_decl(FILE *f, decl_type_t *dt, const char *name)
+void write_declspec_decl(FILE *f, decl_spec_t *ds, const char *name)
 {
-  write_type_v(f, dt, FALSE, TRUE, name);
+  write_type_v(f, ds, FALSE, TRUE, name);
 }
 
-void write_decltype_decl_left(FILE *f, decl_type_t *dt)
+void write_declspec_decl_left(FILE *f, decl_spec_t *ds)
 {
-  write_decltype_left(f, dt, NAME_DEFAULT, TRUE);
+  write_declspec_left(f, ds, NAME_DEFAULT, TRUE);
 }
 
 static int user_type_registered(const char *name)
@@ -730,7 +730,7 @@ void check_for_additional_prototype_types(type_t *type)
         break;
       }
       if (vars) LIST_FOR_EACH_ENTRY( v, vars, const var_t, entry )
-        check_for_additional_prototype_types(v->decltype.type);
+        check_for_additional_prototype_types(v->declspec.type);
     }
 
     if (type_is_alias(type))
@@ -760,7 +760,7 @@ static int for_each_serializable(const statement_list_t *stmts, FILE *header,
 {
     statement_t *stmt, *iface_stmt;
     statement_list_t *iface_stmts;
-    const typedef_list_t *typedef_entry;
+    const type_list_t *type_entry;
 
     if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry )
     {
@@ -771,12 +771,12 @@ static int for_each_serializable(const statement_list_t *stmts, FILE *header,
         if (iface_stmts) LIST_FOR_EACH_ENTRY( iface_stmt, iface_stmts, statement_t, entry )
         {
             if (iface_stmt->type != STMT_TYPEDEF) continue;
-            for (typedef_entry = iface_stmt->u.typedef_list; typedef_entry; typedef_entry = typedef_entry->next)
+            for (type_entry = iface_stmt->u.type_list; type_entry; type_entry = type_entry->next)
             {
-                if (!is_attr(typedef_entry->var->decltype.type->attrs, ATTR_ENCODE)
-                    && !is_attr(typedef_entry->var->decltype.type->attrs, ATTR_DECODE))
+                if (!is_attr(type_entry->type->attrs, ATTR_ENCODE)
+                    && !is_attr(type_entry->type->attrs, ATTR_DECODE))
                     continue;
-                if (!proc(header, typedef_entry->var->decltype.type))
+                if (!proc(header, type_entry->type))
                     return 0;
             }
         }
@@ -828,17 +828,17 @@ static void write_typedef(FILE *header, type_t *type)
 
 int is_const_decl(const var_t *var)
 {
-  const decl_type_t *dt;
+  const decl_spec_t *ds;
   /* strangely, MIDL accepts a const attribute on any pointer in the
   * declaration to mean that data isn't being instantiated. this appears
   * to be a bug, but there is no benefit to being incompatible with MIDL,
   * so we'll do the same thing */
-  for (dt = &var->decltype; ;)
+  for (ds = &var->declspec; ;)
   {
-    if (dt->typequalifier == TYPE_QUALIFIER_CONST)
+    if (ds->typequalifier == TYPE_QUALIFIER_CONST)
       return TRUE;
-    else if (is_ptr(dt->type))
-      dt = type_pointer_get_ref(dt->type);
+    else if (is_ptr(ds->type))
+      ds = type_pointer_get_ref(ds->type);
     else break;
   }
   return FALSE;
@@ -854,7 +854,7 @@ static void write_declaration(FILE *header, const var_t *v)
   }
   else
   {
-    switch (v->decltype.stgclass)
+    switch (v->declspec.stgclass)
     {
       case STG_NONE:
       case STG_REGISTER: /* ignored */
@@ -866,7 +866,7 @@ static void write_declaration(FILE *header, const var_t *v)
         fprintf(header, "extern ");
         break;
     }
-    write_type_def_or_decl(header, (decl_type_t*)&v->decltype, FALSE, v->name);
+    write_type_def_or_decl(header, (decl_spec_t*)&v->declspec, FALSE, v->name);
     fprintf(header, ";\n\n");
   }
 }
@@ -883,7 +883,7 @@ static void write_library(FILE *header, const typelib_t *typelib)
 const type_t* get_explicit_generic_handle_type(const var_t* var)
 {
     const type_t *t;
-    for (t = var->decltype.type;
+    for (t = var->declspec.type;
          is_ptr(t) || type_is_alias(t);
          t = type_is_alias(t) ? type_alias_get_aliasee_type(t) : type_pointer_get_ref_type(t))
         if ((type_get_type_detect_alias(t) != TYPE_BASIC || type_basic_get_type(t) != TYPE_BASIC_HANDLE) &&
@@ -896,13 +896,13 @@ const var_t *get_func_handle_var( const type_t *iface, const var_t *func,
                                   unsigned char *explicit_fc, unsigned char *implicit_fc )
 {
     const var_t *var;
-    const var_list_t *args = type_get_function_args( func->decltype.type );
+    const var_list_t *args = type_get_function_args( func->declspec.type );
 
     *explicit_fc = *implicit_fc = 0;
     if (args) LIST_FOR_EACH_ENTRY( var, args, const var_t, entry )
     {
         if (!is_attr( var->attrs, ATTR_IN ) && is_attr( var->attrs, ATTR_OUT )) continue;
-        if (type_get_type( var->decltype.type ) == TYPE_BASIC && type_basic_get_type( var->decltype.type ) == TYPE_BASIC_HANDLE)
+        if (type_get_type( var->declspec.type ) == TYPE_BASIC && type_basic_get_type( var->declspec.type ) == TYPE_BASIC_HANDLE)
         {
             *explicit_fc = FC_BIND_PRIMITIVE;
             return var;
@@ -912,7 +912,7 @@ const var_t *get_func_handle_var( const type_t *iface, const var_t *func,
             *explicit_fc = FC_BIND_GENERIC;
             return var;
         }
-        if (is_context_handle( var->decltype.type ))
+        if (is_context_handle( var->declspec.type ))
         {
             *explicit_fc = FC_BIND_CONTEXT;
             return var;
@@ -921,8 +921,8 @@ const var_t *get_func_handle_var( const type_t *iface, const var_t *func,
 
     if ((var = get_attrp( iface->attrs, ATTR_IMPLICIT_HANDLE )))
     {
-        if (type_get_type( var->decltype.type ) == TYPE_BASIC &&
-            type_basic_get_type( var->decltype.type ) == TYPE_BASIC_HANDLE)
+        if (type_get_type( var->declspec.type ) == TYPE_BASIC &&
+            type_basic_get_type( var->declspec.type ) == TYPE_BASIC_HANDLE)
             *implicit_fc = FC_BIND_PRIMITIVE;
         else
             *implicit_fc = FC_BIND_GENERIC;
@@ -937,13 +937,13 @@ int has_out_arg_or_return(const var_t *func)
 {
     const var_t *var;
 
-    if (!is_void(type_function_get_rettype(func->decltype.type)))
+    if (!is_void(type_function_get_rettype(func->declspec.type)))
         return 1;
 
-    if (!type_get_function_args(func->decltype.type))
+    if (!type_get_function_args(func->declspec.type))
         return 0;
 
-    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->decltype.type), const var_t, entry )
+    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
         if (is_attr(var->attrs, ATTR_OUT))
             return 1;
 
@@ -1023,7 +1023,7 @@ static int is_override_method(const type_t *iface, const type_t *child, const va
 
 static int is_aggregate_return(const var_t *func)
 {
-  enum type_type type = type_get_type(type_function_get_rettype(func->decltype.type));
+  enum type_type type = type_get_type(type_function_get_rettype(func->declspec.type));
   return type == TYPE_STRUCT || type == TYPE_UNION ||
          type == TYPE_COCLASS || type == TYPE_INTERFACE;
 }
@@ -1063,8 +1063,8 @@ static void write_method_macro(FILE *header, const type_t *iface, const type_t *
       const var_t *arg;
 
       fprintf(header, "#define %s_%s(This", name, get_name(func));
-      if (type_get_function_args(func->decltype.type))
-          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->decltype.type), const var_t, entry )
+      if (type_get_function_args(func->declspec.type))
+          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->declspec.type), const var_t, entry )
               fprintf(header, ",%s", arg->name);
       fprintf(header, ") ");
 
@@ -1075,8 +1075,8 @@ static void write_method_macro(FILE *header, const type_t *iface, const type_t *
       }
 
       fprintf(header, "(This)->lpVtbl->%s(This", get_vtbl_entry_name(iface, func));
-      if (type_get_function_args(func->decltype.type))
-          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->decltype.type), const var_t, entry )
+      if (type_get_function_args(func->declspec.type))
+          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->declspec.type), const var_t, entry )
               fprintf(header, ",%s", arg->name);
       fprintf(header, ")\n");
     }
@@ -1106,7 +1106,7 @@ void write_args(FILE *h, const var_list_t *args, const char *name, int method, i
         }
         else fprintf(h, ",");
     }
-    write_decltype_decl(h, (decl_type_t*)&arg->decltype, arg->name);
+    write_declspec_decl(h, (decl_spec_t*)&arg->declspec, arg->name);
     if (method == 2) {
         const expr_t *expr = get_attrp(arg->attrs, ATTR_DEFAULTVALUE);
         if (expr) {
@@ -1118,7 +1118,7 @@ void write_args(FILE *h, const var_list_t *args, const char *name, int method, i
                     expr_t bstr;
 
                     /* Fixup the expression type for a BSTR like midl does. */
-                    if (get_type_vt(arg->decltype.type) == VT_BSTR && expr->type == EXPR_STRLIT)
+                    if (get_type_vt(arg->declspec.type) == VT_BSTR && expr->type == EXPR_STRLIT)
                     {
                         bstr = *expr;
                         bstr.type = EXPR_WSTRLIT;
@@ -1147,8 +1147,8 @@ static void write_cpp_method_def(FILE *header, const type_t *iface)
   {
     const var_t *func = stmt->u.var;
     if (!is_callas(func->attrs)) {
-      const char *callconv = get_attrp(func->decltype.type->attrs, ATTR_CALLCONV);
-      const var_list_t *args = type_get_function_args(func->decltype.type);
+      const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
+      const var_list_t *args = type_get_function_args(func->declspec.type);
       const var_t *arg;
 
       if (!callconv) callconv = "STDMETHODCALLTYPE";
@@ -1158,11 +1158,11 @@ static void write_cpp_method_def(FILE *header, const type_t *iface)
 
         indent(header, 0);
         fprintf(header, "virtual ");
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, "* %s %s(\n", callconv, get_name(func));
         ++indentation;
         indent(header, 0);
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, " *__ret");
         --indentation;
         if (args) {
@@ -1172,7 +1172,7 @@ static void write_cpp_method_def(FILE *header, const type_t *iface)
         fprintf(header, ") = 0;\n");
 
         indent(header, 0);
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, " %s %s(\n", callconv, get_name(func));
         write_args(header, args, iface->name, 2, TRUE);
         fprintf(header, ")\n");
@@ -1180,7 +1180,7 @@ static void write_cpp_method_def(FILE *header, const type_t *iface)
         fprintf(header, "{\n");
         ++indentation;
         indent(header, 0);
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, " __ret;\n");
         indent(header, 0);
         fprintf(header, "return *%s(&__ret", get_name(func));
@@ -1197,7 +1197,7 @@ static void write_cpp_method_def(FILE *header, const type_t *iface)
 
       indent(header, 0);
       fprintf(header, "virtual ");
-      write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+      write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
       fprintf(header, " %s %s(\n", callconv, get_name(func));
       write_args(header, args, iface->name, 2, TRUE);
       fprintf(header, ") = 0;\n");
@@ -1234,25 +1234,25 @@ static void write_inline_wrappers(FILE *header, const type_t *iface, const type_
       const var_t *arg;
 
       fprintf(header, "static FORCEINLINE ");
-      write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+      write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
       fprintf(header, " %s_%s(", name, get_name(func));
-      write_args(header, type_get_function_args(func->decltype.type), name, 1, FALSE);
+      write_args(header, type_get_function_args(func->declspec.type), name, 1, FALSE);
       fprintf(header, ") {\n");
       ++indentation;
       if (!is_aggregate_return(func)) {
         indent(header, 0);
         fprintf(header, "%sThis->lpVtbl->%s(This",
-                is_void(type_function_get_rettype(func->decltype.type)) ? "" : "return ",
+                is_void(type_function_get_rettype(func->declspec.type)) ? "" : "return ",
                 get_vtbl_entry_name(iface, func));
       } else {
         indent(header, 0);
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, " __ret;\n");
         indent(header, 0);
         fprintf(header, "return *This->lpVtbl->%s(This,&__ret", get_vtbl_entry_name(iface, func));
       }
-      if (type_get_function_args(func->decltype.type))
-          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->decltype.type), const var_t, entry )
+      if (type_get_function_args(func->declspec.type))
+          LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->declspec.type), const var_t, entry )
               fprintf(header, ",%s", arg->name);
       fprintf(header, ");\n");
       --indentation;
@@ -1278,10 +1278,10 @@ static void do_write_c_method_def(FILE *header, const type_t *iface, const char 
       first_iface = 0;
     }
     if (!is_callas(func->attrs)) {
-      const char *callconv = get_attrp(func->decltype.type->attrs, ATTR_CALLCONV);
+      const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
       if (!callconv) callconv = "STDMETHODCALLTYPE";
       indent(header, 0);
-      write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+      write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
       if (is_aggregate_return(func))
         fprintf(header, " *");
       if (is_inherited_method(iface, func))
@@ -1294,13 +1294,13 @@ static void do_write_c_method_def(FILE *header, const type_t *iface, const char 
       if (is_aggregate_return(func)) {
         fprintf(header, ",\n");
         indent(header, 0);
-        write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
         fprintf(header, " *__ret");
       }
       --indentation;
-      if (type_get_function_args(func->decltype.type)) {
+      if (type_get_function_args(func->declspec.type)) {
         fprintf(header, ",\n");
-        write_args(header, type_get_function_args(func->decltype.type), name, 0, TRUE);
+        write_args(header, type_get_function_args(func->declspec.type), name, 0, TRUE);
       }
       fprintf(header, ");\n");
       fprintf(header, "\n");
@@ -1327,12 +1327,12 @@ static void write_method_proto(FILE *header, const type_t *iface)
     const var_t *func = stmt->u.var;
 
     if (is_callas(func->attrs)) {
-      const char *callconv = get_attrp(func->decltype.type->attrs, ATTR_CALLCONV);
+      const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
       if (!callconv) callconv = "STDMETHODCALLTYPE";
       /* proxy prototype */
-      write_decltype_decl_left(header, type_function_get_retdecltype(func->decltype.type));
+      write_declspec_decl_left(header, type_function_get_retdeclspec(func->declspec.type));
       fprintf(header, " %s %s_%s_Proxy(\n", callconv, iface->name, get_name(func));
-      write_args(header, type_get_function_args(func->decltype.type), iface->name, 1, TRUE);
+      write_args(header, type_get_function_args(func->declspec.type), iface->name, 1, TRUE);
       fprintf(header, ");\n");
       /* stub prototype */
       fprintf(header, "void __RPC_STUB %s_%s_Stub(\n", iface->name, get_name(func));
@@ -1365,12 +1365,12 @@ static void write_locals(FILE *fp, const type_t *iface, int body)
       if (&stmt2->entry != type_iface_get_stmts(iface)) {
         const var_t *m = stmt2->u.var;
         /* proxy prototype - use local prototype */
-        write_decltype_decl_left(fp, type_function_get_retdecltype(m->decltype.type));
+        write_declspec_decl_left(fp, type_function_get_retdeclspec(m->declspec.type));
         fprintf(fp, " CALLBACK %s_%s_Proxy(\n", iface->name, get_name(m));
-        write_args(fp, type_get_function_args(m->decltype.type), iface->name, 1, TRUE);
+        write_args(fp, type_get_function_args(m->declspec.type), iface->name, 1, TRUE);
         fprintf(fp, ")");
         if (body) {
-          type_t *rt = type_function_get_rettype(m->decltype.type);
+          type_t *rt = type_function_get_rettype(m->declspec.type);
           fprintf(fp, "\n{\n");
           fprintf(fp, "    %s\n", comment);
           if (rt->name && strcmp(rt->name, "HRESULT") == 0)
@@ -1387,9 +1387,9 @@ static void write_locals(FILE *fp, const type_t *iface, int body)
         else
           fprintf(fp, ";\n");
         /* stub prototype - use remotable prototype */
-        write_decltype_decl_left(fp, type_function_get_retdecltype(func->decltype.type));
+        write_declspec_decl_left(fp, type_function_get_retdeclspec(func->declspec.type));
         fprintf(fp, " __RPC_STUB %s_%s_Stub(\n", iface->name, get_name(m));
-        write_args(fp, type_get_function_args(func->decltype.type), iface->name, 1, TRUE);
+        write_args(fp, type_get_function_args(func->declspec.type), iface->name, 1, TRUE);
         fprintf(fp, ")");
         if (body)
           /* Remotable methods must all return HRESULTs.  */
@@ -1435,18 +1435,18 @@ void write_local_stubs(const statement_list_t *stmts)
 
 static void write_function_proto(FILE *header, const type_t *iface, const var_t *fun, const char *prefix)
 {
-  const char *callconv = get_attrp(fun->decltype.type->attrs, ATTR_CALLCONV);
+  const char *callconv = get_attrp(fun->declspec.type->attrs, ATTR_CALLCONV);
 
   if (!callconv) callconv = "__cdecl";
   /* FIXME: do we need to handle call_as? */
-  write_decltype_decl_left(header, type_function_get_retdecltype(fun->decltype.type));
-  if (fun->decltype.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+  write_declspec_decl_left(header, type_function_get_retdeclspec(fun->declspec.type));
+  if (fun->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     fprintf(header, " inline");
   }
   fprintf(header, " %s ", callconv);
   fprintf(header, "%s%s(\n", prefix, get_name(fun));
-  if (type_get_function_args(fun->decltype.type))
-    write_args(header, type_get_function_args(fun->decltype.type), iface->name, 0, TRUE);
+  if (type_get_function_args(fun->declspec.type))
+    write_args(header, type_get_function_args(fun->declspec.type), iface->name, 0, TRUE);
   else
     fprintf(header, "    void");
   fprintf(header, ");\n\n");
@@ -1572,7 +1572,7 @@ static void write_rpc_interface_start(FILE *header, const type_t *iface)
   if (var)
   {
       fprintf(header, "extern ");
-      write_decltype_decl( header, (decl_type_t*)&var->decltype, var->name );
+      write_declspec_decl( header, (decl_spec_t*)&var->declspec, var->name );
       fprintf(header, ";\n");
   }
   if (old_names)
@@ -1768,9 +1768,9 @@ static void write_header_stmts(FILE *header, const statement_list_t *stmts, cons
         break;
       case STMT_TYPEDEF:
       {
-        const typedef_list_t *typedef_entry = stmt->u.typedef_list;
-        for (; typedef_entry; typedef_entry = typedef_entry->next)
-	        write_typedef(header, typedef_entry->var->decltype.type);
+        const type_list_t *type_entry = stmt->u.type_list;
+        for (; type_entry; type_entry = type_entry->next)
+	        write_typedef(header, type_entry->type);
         break;
       }
       case STMT_LIBRARY:
@@ -1781,7 +1781,7 @@ static void write_header_stmts(FILE *header, const statement_list_t *stmts, cons
         fprintf(header, "%s\n", stmt->u.str);
         break;
       case STMT_DECLARATION:
-        if (iface && type_get_type(stmt->u.var->decltype.type) == TYPE_FUNCTION)
+        if (iface && type_get_type(stmt->u.var->declspec.type) == TYPE_FUNCTION)
         {
           if (!ignore_funcs)
           {

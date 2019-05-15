@@ -20,7 +20,7 @@
 
 #include "config.h"
 #include "wine/port.h"
-
+ 
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef HAVE_UNISTD_H
@@ -52,13 +52,14 @@ static void print_client( const char *format, ... )
 
 static void write_client_func_decl( const type_t *iface, const var_t *func )
 {
-    const char *callconv = get_attrp(func->decltype.type->attrs, ATTR_CALLCONV);
-    const var_list_t *args = type_get_function_args(func->decltype.type);
-    decl_type_t *retdecltype = type_function_get_retdecltype(func->decltype.type);
+    const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
+    const var_list_t *args = type_get_function_args(func->declspec.type);
+    decl_spec_t *retdeclspec = type_function_get_retdeclspec(func->declspec.type);
 
     if (!callconv) callconv = "__cdecl";
-    write_decltype_decl_left(client, retdecltype);
-    if (func->decltype.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+    write_declspec_decl_left(client, retdeclspec);
+    /* TODO: sepeate CL for inline fix */
+    if (func->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
         fprintf(client, " inline");
     }
     fprintf(client, " %s ", callconv);
@@ -77,9 +78,9 @@ static void write_function_stub( const type_t *iface, const var_t *func,
 {
     unsigned char explicit_fc, implicit_fc;
     int has_full_pointer = is_full_pointer_function(func);
-    var_t *retval = type_function_get_retval(func->decltype.type);
+    var_t *retval = type_function_get_retval(func->declspec.type);
     const var_t *handle_var = get_func_handle_var( iface, func, &explicit_fc, &implicit_fc );
-    int has_ret = !is_void(retval->decltype.type);
+    int has_ret = !is_void(retval->declspec.type);
 
     if (is_interpreted_func( iface, func ))
     {
@@ -100,7 +101,7 @@ static void write_function_stub( const type_t *iface, const var_t *func,
         print_client("RPC_BINDING_HANDLE _Handle;\n");
     }
 
-    if (has_ret && decl_indirect(retval->decltype.type))
+    if (has_ret && decl_indirect(retval->declspec.type))
     {
         print_client("void *_p_%s;\n", retval->name);
     }
@@ -139,7 +140,7 @@ static void write_function_stub( const type_t *iface, const var_t *func,
     if (has_ret)
     {
         print_client("%s", "");
-        write_decltype_decl(client, (decl_type_t*)&retval->decltype, retval->name);
+        write_declspec_decl(client, (decl_spec_t*)&retval->declspec, retval->name);
         fprintf(client, ";\n");
     }
     print_client("RPC_MESSAGE _RpcMessage;\n");
@@ -150,7 +151,7 @@ static void write_function_stub( const type_t *iface, const var_t *func,
         if (explicit_fc == FC_BIND_GENERIC)
             print_client("__frame->%s = %s;\n", handle_var->name, handle_var->name );
     }
-    if (has_ret && decl_indirect(retval->decltype.type))
+    if (has_ret && decl_indirect(retval->declspec.type))
     {
         print_client("__frame->_p_%s = &%s;\n", retval->name, retval->name);
     }
@@ -197,7 +198,7 @@ static void write_function_stub( const type_t *iface, const var_t *func,
         /* if the context_handle attribute appears in the chain of types
          * without pointers being followed, then the context handle must
          * be direct, otherwise it is a pointer */
-        int is_ch_ptr = !is_aliaschain_attr(handle_var->decltype.type, ATTR_CONTEXTHANDLE);
+        int is_ch_ptr = !is_aliaschain_attr(handle_var->declspec.type, ATTR_CONTEXTHANDLE);
         print_client("if (%s%s != 0)\n", is_ch_ptr ? "*" : "", handle_var->name);
         indent++;
         print_client("__frame->_Handle = NDRCContextBinding(%s%s);\n",
@@ -260,9 +261,9 @@ static void write_function_stub( const type_t *iface, const var_t *func,
     /* unmarshal return value */
     if (has_ret)
     {
-        if (decl_indirect(retval->decltype.type))
+        if (decl_indirect(retval->declspec.type))
             print_client("MIDL_memset(&%s, 0, sizeof(%s));\n", retval->name, retval->name);
-        else if (is_ptr(retval->decltype.type) || is_array(retval->decltype.type))
+        else if (is_ptr(retval->declspec.type) || is_array(retval->declspec.type))
             print_client("%s = 0;\n", retval->name);
         write_remoting_arguments(client, indent, func, "", PASS_RETURN, PHASE_UNMARSHAL);
     }
@@ -368,8 +369,8 @@ static void write_function_stubs(type_t *iface, unsigned int *proc_offset)
         case STMT_DECLARATION:
         {
             const var_t *func = stmt->u.var;
-            if (stmt->u.var->decltype.stgclass != STG_NONE
-                || type_get_type_detect_alias(stmt->u.var->decltype.type) != TYPE_FUNCTION)
+            if (stmt->u.var->declspec.stgclass != STG_NONE
+                || type_get_type_detect_alias(stmt->u.var->declspec.type) != TYPE_FUNCTION)
                 continue;
             write_function_stub( iface, func, method_count++, *proc_offset );
             *proc_offset += get_size_procformatstring_func( iface, func );
@@ -377,9 +378,9 @@ static void write_function_stubs(type_t *iface, unsigned int *proc_offset)
         }
         case STMT_TYPEDEF:
         {
-            const typedef_list_t *typedef_entry;
-            for (typedef_entry = stmt->u.typedef_list; typedef_entry; typedef_entry = typedef_entry->next)
-                write_serialize_functions(client, typedef_entry->var->decltype.type, iface);
+            const type_list_t *type_entry;
+            for (type_entry = stmt->u.type_list; type_entry; type_entry = type_entry->next)
+                write_serialize_functions(client, type_entry->type, iface);
             break;
         }
         default:
@@ -491,7 +492,7 @@ static void write_implicithandledecl(type_t *iface)
 
     if (implicit_handle)
     {
-        write_decltype_decl( client, (decl_type_t*)&implicit_handle->decltype, implicit_handle->name );
+        write_declspec_decl( client, (decl_spec_t*)&implicit_handle->declspec, implicit_handle->name );
         fprintf(client, ";\n\n");
     }
 }
@@ -535,19 +536,19 @@ static void write_client_ifaces(const statement_list_t *stmts, int expr_eval_rou
 
             LIST_FOR_EACH_ENTRY(stmt2, type_iface_get_stmts(iface), const statement_t, entry)
             {
-                if (stmt2->type == STMT_DECLARATION && stmt2->u.var->decltype.stgclass == STG_NONE &&
-                    type_get_type_detect_alias(stmt2->u.var->decltype.type) == TYPE_FUNCTION)
+                if (stmt2->type == STMT_DECLARATION && stmt2->u.var->declspec.stgclass == STG_NONE &&
+                    type_get_type_detect_alias(stmt2->u.var->declspec.type) == TYPE_FUNCTION)
                 {
                     needs_stub = 1;
                     break;
                 }
                 if (stmt2->type == STMT_TYPEDEF)
                 {
-                    const typedef_list_t *typedef_entry;
-                    for (typedef_entry = stmt2->u.typedef_list; typedef_entry; typedef_entry = typedef_entry->next)
+                    const type_list_t *type_entry;
+                    for (type_entry = stmt2->u.type_list; type_entry; type_entry = type_entry->next)
                     {
-                        if (is_attr(typedef_entry->var->decltype.type->attrs, ATTR_ENCODE)
-                            || is_attr(typedef_entry->var->decltype.type->attrs, ATTR_DECODE))
+                        if (is_attr(type_entry->type->attrs, ATTR_ENCODE)
+                            || is_attr(type_entry->type->attrs, ATTR_DECODE))
                         {
                             needs_stub = 1;
                             break;

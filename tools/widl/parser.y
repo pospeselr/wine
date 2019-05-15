@@ -60,16 +60,16 @@ static void fix_incomplete_types(type_t *complete_type);
 static str_list_t *append_str(str_list_t *list, char *str);
 static attr_list_t *append_attr(attr_list_t *list, attr_t *attr);
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list);
-static decl_type_t *make_decl_type(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass);
-static decl_type_t *make_decl_type2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
+static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass);
+static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
 static attr_t *make_attrdt(enum attr_type type, type_t *val);
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr);
 static type_t *append_array(type_t *chain, expr_t *expr);
-static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const declarator_t *decl, int top);
-static var_list_t *set_var_types(attr_list_t *attrs, decl_type_t *decltype, declarator_list_t *decls);
+static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl, int top);
+static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *declspec, declarator_list_t *decls);
 static ifref_list_t *append_ifref(ifref_list_t *list, ifref_t *iface);
 static ifref_t *make_ifref(type_t *iface);
 static var_list_t *append_var_list(var_list_t *list, var_list_t *vars);
@@ -80,7 +80,7 @@ static typelib_t *make_library(const char *name, const attr_list_t *attrs);
 static type_t *append_chain_type(type_t *chain, type_t *type);
 static warning_list_t *append_warning(warning_list_t *, int);
 
-static type_t *reg_typedefs(decl_type_t *decltype, var_list_t *names, attr_list_t *attrs);
+static type_t *reg_typedefs(decl_spec_t *declspec, var_list_t *names, attr_list_t *attrs);
 static type_t *find_type_or_error(const char *name, int t);
 static type_t *find_type_or_error2(char *name, int t);
 
@@ -158,7 +158,7 @@ static typelib_t *current_typelib;
 	interface_info_t ifinfo;
 	typelib_t *typelib;
 	struct _import_t *import;
-	struct _decl_type_t *decltype;
+	struct _decl_spec_t *declspec;
 	enum storage_class stgclass;
 }
 
@@ -269,7 +269,7 @@ static typelib_t *current_typelib;
 %type <expr_list> m_exprs /* exprs expr_list */ expr_list_int_const
 %type <ifinfo> interfacehdr
 %type <stgclass> storage_cls_spec
-%type <decltype> decl_spec decl_spec_no_type m_decl_spec_no_type
+%type <declspec> decl_spec decl_spec_no_type m_decl_spec_no_type
 %type <type> inherit interface interfacedef interfacedec
 %type <type> dispinterface dispinterfacehdr dispinterfacedef
 %type <type> module modulehdr moduledef
@@ -646,10 +646,10 @@ enum_list: enum					{ if (!$1->eval)
 
 enum:	  ident '=' expr_int_const		{ $$ = reg_const($1);
 						  $$->eval = $3;
-                                                  $$->decltype.type = type_new_int(TYPE_BASIC_INT, 0);
+                                                  $$->declspec.type = type_new_int(TYPE_BASIC_INT, 0);
 						}
 	| ident					{ $$ = reg_const($1);
-                                                  $$->decltype.type = type_new_int(TYPE_BASIC_INT, 0);
+                                                  $$->declspec.type = type_new_int(TYPE_BASIC_INT, 0);
 						}
 	;
 
@@ -735,7 +735,7 @@ field:	  m_attributes decl_spec struct_declarator_list ';'
 						  $$ = set_var_types($1, $2, $3);
 						}
 	| m_attributes uniondef ';'		{ var_t *v = make_var(NULL);
-						  v->decltype.type = $2; v->attrs = $1;
+						  v->declspec.type = $2; v->attrs = $1;
 						  $$ = append_var(NULL, v);
 						}
 	;
@@ -759,13 +759,13 @@ s_field:  m_attributes decl_spec declarator	{ $$ = declare_var(check_field_attrs
 						  free($3);
 						}
 	| m_attributes structdef		{ var_t *v = make_var(NULL);
-						  v->decltype.type = $2; v->attrs = $1;
+						  v->declspec.type = $2; v->attrs = $1;
 						  $$ = v;
 						}
 	;
 
 funcdef: declaration				{ $$ = $1;
-						  if (type_get_type($$->decltype.type) != TYPE_FUNCTION)
+						  if (type_get_type($$->declspec.type) != TYPE_FUNCTION)
 						    error_loc("only methods may be declared inside the methods section of a dispinterface\n");
 						  check_function_attrs($$->name, $$->attrs);
 						}
@@ -961,9 +961,9 @@ m_type_qual_list:				{ $$ = NULL; }
 	| m_type_qual_list type_qualifier	{ $$ = append_attr($1, $2); }
 	;
 
-decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_type($1, $2, NULL, NULL, STG_NONE); }
+decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_spec($1, $2, NULL, NULL, STG_NONE); }
 	| decl_spec_no_type type m_decl_spec_no_type
-						{ $$ = make_decl_type($2, $1, $3, NULL, STG_NONE); }
+						{ $$ = make_decl_spec($2, $1, $3, NULL, STG_NONE); }
 	;
 
 m_decl_spec_no_type:				{ $$ = NULL; }
@@ -971,9 +971,9 @@ m_decl_spec_no_type:				{ $$ = NULL; }
 	;
 
 decl_spec_no_type:
-	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_type(NULL, $2, NULL, $1, STG_NONE); }
-	| function_specifier m_decl_spec_no_type  { $$ = make_decl_type(NULL, $2, NULL, $1, STG_NONE); }
-	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_type(NULL, $2, NULL, NULL, $1); }
+	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
+	| function_specifier m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
+	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, NULL, $1); }
 	;
 
 declarator:
@@ -1192,8 +1192,8 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 
 static void decl_builtin_alias(const char *name, type_t *t)
 {
-  decl_type_t decltype;
-  reg_type(type_new_alias(init_decltype(&decltype, t), name, &global_namespace), name, &global_namespace, 0);
+  decl_spec_t declspec;
+  reg_type(type_new_alias(init_declspec(&declspec, t), name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1306,7 +1306,7 @@ static attr_list_t *map_attrs(const attr_list_t *list, map_attrs_filter_t filter
   return new_list;
 }
 
-static decl_type_t *make_decl_type(type_t *type, decl_type_t *left, decl_type_t *right, attr_t *attr, enum storage_class stgclass)
+static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass)
 {
   enum type_qualifier typequalifier = TYPE_QUALIFIER_NONE;
   enum function_specifier funcspecifier = FUNCTION_SPECIFIER_NONE;
@@ -1321,56 +1321,56 @@ static decl_type_t *make_decl_type(type_t *type, decl_type_t *left, decl_type_t 
       funcspecifier = FUNCTION_SPECIFIER_INLINE;
   }
 
-  return make_decl_type2(type, left, right, stgclass, typequalifier, funcspecifier);
+  return make_decl_spec2(type, left, right, stgclass, typequalifier, funcspecifier);
 }
 
-static decl_type_t *make_decl_type2(type_t *type, decl_type_t *left, decl_type_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
 {
-  decl_type_t *decltype = left ? left : right;
+  decl_spec_t *declspec = left ? left : right;
 
-  if (!decltype)
+  if (!declspec)
   {
-    decltype = xmalloc(sizeof(*decltype));
-    decltype->type = NULL;
-    decltype->stgclass = STG_NONE;
-    decltype->typequalifier = TYPE_QUALIFIER_NONE;
-    decltype->funcspecifier = FUNCTION_SPECIFIER_NONE;
+    declspec = xmalloc(sizeof(*declspec));
+    declspec->type = NULL;
+    declspec->stgclass = STG_NONE;
+    declspec->typequalifier = TYPE_QUALIFIER_NONE;
+    declspec->funcspecifier = FUNCTION_SPECIFIER_NONE;
   }
-  decltype->type = type;
-  if (left && decltype != left)
+  declspec->type = type;
+  if (left && declspec != left)
   {
-    if (decltype->stgclass == STG_NONE)
-      decltype->stgclass = left->stgclass;
+    if (declspec->stgclass == STG_NONE)
+      declspec->stgclass = left->stgclass;
     else if (left->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
 
-    if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
-      decltype->typequalifier = left->typequalifier;
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = left->typequalifier;
     else if (left->typequalifier != TYPE_QUALIFIER_NONE)
       error_loc("only one type qualifier can be specified\n");
 
-    if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
-      decltype->funcspecifier = left->funcspecifier;
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = left->funcspecifier;
     else if (left->funcspecifier != FUNCTION_SPECIFIER_NONE)
       error_loc("only one function specifier can be specified\n");
 
     assert(!left->type);
     free(left);
   }
-  if (right && decltype != right)
+  if (right && declspec != right)
   {
-    if (decltype->stgclass == STG_NONE)
-      decltype->stgclass = right->stgclass;
+    if (declspec->stgclass == STG_NONE)
+      declspec->stgclass = right->stgclass;
     else if (right->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
 
-    if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
-      decltype->typequalifier = right->typequalifier;
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = right->typequalifier;
     else if (right->typequalifier != TYPE_QUALIFIER_NONE)
       error_loc("only one type qualifier can be specified\n");
 
-    if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
-      decltype->funcspecifier = right->funcspecifier;
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = right->funcspecifier;
     else if (right->funcspecifier != FUNCTION_SPECIFIER_NONE)
       error_loc("only one function specifier can be specified\n");
 
@@ -1378,22 +1378,22 @@ static decl_type_t *make_decl_type2(type_t *type, decl_type_t *left, decl_type_t
     free(right);
   }
 
-  if (decltype->stgclass == STG_NONE)
-    decltype->stgclass = stgclass;
+  if (declspec->stgclass == STG_NONE)
+    declspec->stgclass = stgclass;
   else if (stgclass != STG_NONE)
     error_loc("only one storage class can be specified\n");
 
-  if (decltype->typequalifier == TYPE_QUALIFIER_NONE)
-    decltype->typequalifier = typequalifier;
+  if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+    declspec->typequalifier = typequalifier;
   else if (typequalifier != TYPE_QUALIFIER_NONE)
     error_loc("only one type qualifier can be specified\n");
 
-  if (decltype->funcspecifier == FUNCTION_SPECIFIER_NONE)
-    decltype->funcspecifier = funcspecifier;
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+    declspec->funcspecifier = funcspecifier;
   else if (funcspecifier != FUNCTION_SPECIFIER_NONE)
     error_loc("only one function specifier can be specified\n");
 
-  return decltype;
+  return declspec;
 }
 
 static attr_t *make_attr(enum attr_type type)
@@ -1427,7 +1427,7 @@ static attr_t *make_attrdt(enum attr_type type, type_t *val)
   a = xmalloc(sizeof(attr_t));
 
   a->type = type;
-  init_decltype(&a->u.dtval, val);
+  init_declspec(&a->u.dsval, val);
   return a;
 }
 
@@ -1541,7 +1541,7 @@ static type_t *get_array_or_ptr_ref(type_t *type)
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
     type_t *chain_type = NULL;
-    decl_type_t *chain_decltype = NULL;
+    decl_spec_t *chain_declspec = NULL;
 
     if (!chain)
         return type;
@@ -1549,18 +1549,18 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         ;
 
     if (is_ptr(chain_type))
-        chain_decltype = &chain_type->details.pointer.ref;
+        chain_declspec = &chain_type->details.pointer.ref;
     else if (is_array(chain_type))
-        chain_decltype = &chain_type->details.array.elem;
+        chain_declspec = &chain_type->details.array.elem;
     else
         assert(0);
 
-    chain_decltype->type = type;
-    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its decltype
+    chain_declspec->type = type;
+    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its declspec
      * typequalifier on the pointer */
     if (is_attr(type->attrs, ATTR_CONST)) {
       type->attrs = remove_attr(type->attrs, ATTR_CONST);
-      chain_decltype->typequalifier = TYPE_QUALIFIER_CONST;
+      chain_declspec->typequalifier = TYPE_QUALIFIER_CONST;
     }
 
     return chain;
@@ -1581,7 +1581,7 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const declarator_t *decl,
+static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1590,21 +1590,21 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
   expr_t *dim;
   type_t **ptype;
   type_t *func_type = decl ? decl->func_type : NULL;
-  type_t *type = decltype->type;
+  type_t *type = declspec->type;
 
 
-  if (decltype->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     if (!func_type)
     {
       error_loc("inline attribute applied to non-function type\n");
     }
     else
     {
-      v->decltype.funcspecifier = decltype->funcspecifier;
+      v->declspec.funcspecifier = declspec->funcspecifier;
     }
   }
 
-  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's decltype
+  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's declspec
    * unless the pointee already has const type qualifier*/
 
   /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST
@@ -1612,41 +1612,41 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
   if (!decl)
   {
     /* simplest case, no pointers to deal with here */
-    v->decltype.typequalifier = decltype->typequalifier;
+    v->declspec.typequalifier = declspec->typequalifier;
   } else if (decl->bits) {
     /* dealing with a bitfield, just pass it on */
-    v->decltype.type = type_new_bitfield(decltype, decl->bits);
+    v->declspec.type = type_new_bitfield(declspec, decl->bits);
   }
   else {
     /* here we're dealing with a pointerish type chain, so we need to pull
-     * the typequalifier off of the decltype and stick them in the type's attr list
+     * the typequalifier off of the declspec and stick them in the type's attr list
      */
-    if (decltype->typequalifier == TYPE_QUALIFIER_CONST) {
+    if (declspec->typequalifier == TYPE_QUALIFIER_CONST) {
       type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
       assert(is_attr(type->attrs, ATTR_CONST));
     }
 
-    v->decltype.type = append_chain_type(decl->type, type);
+    v->declspec.type = append_chain_type(decl->type, type);
     /* finally pull the ATTR_CONST attribute off the head of the pointerish type chain,
-     * and stick on the var's decltype */
-    if (is_attr(v->decltype.type->attrs, ATTR_CONST)) {
-      v->decltype.type->attrs = remove_attr(v->decltype.type->attrs, ATTR_CONST);
-      v->decltype.typequalifier = TYPE_QUALIFIER_CONST;
+     * and stick on the var's declspec */
+    if (is_attr(v->declspec.type->attrs, ATTR_CONST)) {
+      v->declspec.type->attrs = remove_attr(v->declspec.type->attrs, ATTR_CONST);
+      v->declspec.typequalifier = TYPE_QUALIFIER_CONST;
     }
   }
 
-  v->decltype.stgclass = decltype->stgclass;
+  v->declspec.stgclass = declspec->stgclass;
   v->attrs = attrs;
 
   /* check for pointer attribute being applied to non-pointer, non-array
    * type */
-  if (!is_array(v->decltype.type))
+  if (!is_array(v->declspec.type))
   {
     int ptr_attr = get_attrv(v->attrs, ATTR_POINTERTYPE);
     const type_t *ptr = NULL;
     /* pointer attributes on the left side of the type belong to the function
      * pointer, if one is being declared */
-    type_t **pt = func_type ? &func_type : &v->decltype.type;
+    type_t **pt = func_type ? &func_type : &v->declspec.type;
     for (ptr = *pt; ptr && !ptr_attr; )
     {
       ptr_attr = get_attrv(ptr->attrs, ATTR_POINTERTYPE);
@@ -1673,7 +1673,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
   {
     type_t *t = type;
 
-    if (!is_ptr(v->decltype.type) && !is_array(v->decltype.type))
+    if (!is_ptr(v->declspec.type) && !is_array(v->declspec.type))
       error_loc("'%s': [string] attribute applied to non-pointer, non-array type\n",
                 v->name);
 
@@ -1699,15 +1699,15 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
 
   if (is_attr(v->attrs, ATTR_V1ENUM))
   {
-    if (type_get_type_detect_alias(v->decltype.type) != TYPE_ENUM)
+    if (type_get_type_detect_alias(v->declspec.type) != TYPE_ENUM)
       error_loc("'%s': [v1_enum] attribute applied to non-enum type\n", v->name);
   }
 
-  if (is_attr(v->attrs, ATTR_RANGE) && !is_allowed_range_type(v->decltype.type))
+  if (is_attr(v->attrs, ATTR_RANGE) && !is_allowed_range_type(v->declspec.type))
     error_loc("'%s': [range] attribute applied to non-integer type\n",
               v->name);
 
-  ptype = &v->decltype.type;
+  ptype = &v->declspec.type;
   if (sizes) LIST_FOR_EACH_ENTRY(dim, sizes, expr_t, entry)
   {
     if (dim->type != EXPR_VOID)
@@ -1739,7 +1739,7 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
       error_loc("%s: too many expressions in size_is attribute\n", v->name);
   }
 
-  ptype = &v->decltype.type;
+  ptype = &v->declspec.type;
   if (lengs) LIST_FOR_EACH_ENTRY(dim, lengs, expr_t, entry)
   {
     if (dim->type != EXPR_VOID)
@@ -1771,27 +1771,27 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
   if (func_type)
   {
     type_t *ft, *t;
-    type_t *return_type = v->decltype.type;
-    enum type_qualifier typequalifier = v->decltype.typequalifier;
+    type_t *return_type = v->declspec.type;
+    enum type_qualifier typequalifier = v->declspec.typequalifier;
 
-    v->decltype.type = func_type;
-    v->decltype.typequalifier = TYPE_QUALIFIER_NONE;
-    for (ft = v->decltype.type; is_ptr(ft); ft = type_pointer_get_ref_type(ft))
+    v->declspec.type = func_type;
+    v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
+    for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref_type(ft))
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
-    ft->details.function->retval->decltype.type = return_type;
-    ft->details.function->retval->decltype.typequalifier = typequalifier;
+    ft->details.function->retval->declspec.type = return_type;
+    ft->details.function->retval->declspec.typequalifier = typequalifier;
 
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
-    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref_type(t))
+    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref_type(t))
       ft->attrs = move_attr(ft->attrs, t->attrs, ATTR_CALLCONV);
   }
   else
   {
     type_t *t;
-    for (t = v->decltype.type; is_ptr(t); t = type_pointer_get_ref_type(t))
+    for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref_type(t))
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
@@ -1799,18 +1799,18 @@ static var_t *declare_var(attr_list_t *attrs, const decl_type_t *decltype, const
   return v;
 }
 
-static var_list_t *set_var_types(attr_list_t *attrs, decl_type_t *decltype, declarator_list_t *decls)
+static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *declspec, declarator_list_t *decls)
 {
   declarator_t *decl, *next;
   var_list_t *var_list = NULL;
 
   LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
   {
-    var_t *var = declare_var(attrs, decltype, decl, 0);
+    var_t *var = declare_var(attrs, declspec, decl, 0);
     var_list = append_var(var_list, var);
     free(decl);
   }
-  free(decltype);
+  free(declspec);
   return var_list;
 }
 
@@ -1862,10 +1862,10 @@ var_t *make_var(char *name)
 {
   var_t *v = xmalloc(sizeof(var_t));
   v->name = name;
-  v->decltype.type = NULL;
-  v->decltype.stgclass = STG_NONE;
-  v->decltype.typequalifier = TYPE_QUALIFIER_NONE;
-  v->decltype.funcspecifier = FUNCTION_SPECIFIER_NONE;
+  v->declspec.type = NULL;
+  v->declspec.stgclass = STG_NONE;
+  v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
+  v->declspec.funcspecifier = FUNCTION_SPECIFIER_NONE;
   v->attrs = NULL;
   v->eval = NULL;
   init_loc_info(&v->loc_info);
@@ -1876,7 +1876,7 @@ static var_t *copy_var(var_t *src, char *name, map_attrs_filter_t attr_filter)
 {
   var_t *v = xmalloc(sizeof(var_t));
   v->name = name;
-  v->decltype = src->decltype;
+  v->declspec = src->declspec;
   v->attrs = map_attrs(src->attrs, attr_filter);
   v->eval = src->eval;
   v->loc_info = src->loc_info;
@@ -1906,16 +1906,16 @@ static declarator_t *make_declarator(var_t *var)
 
 static type_t *make_safearray(type_t *type)
 {
-  decl_type_t aliasee_dt;
-  decl_type_t element_dt;
+  decl_spec_t aliasee_ds;
+  decl_spec_t element_ds;
 
-  init_decltype(&element_dt,
+  init_declspec(&element_ds,
     type_new_alias(
-      init_decltype(&aliasee_dt, type),
+      init_declspec(&aliasee_ds, type),
       "SAFEARRAY",
       &global_namespace));
 
-  return type_new_array(NULL, &element_dt, TRUE, 0,
+  return type_new_array(NULL, &element_ds, TRUE, 0,
                         NULL, NULL, FC_RP);
 }
 
@@ -2064,10 +2064,10 @@ static void fix_incomplete_types(type_t *complete_type)
   }
 }
 
-static type_t *reg_typedefs(decl_type_t *decltype, declarator_list_t *decls, attr_list_t *attrs)
+static type_t *reg_typedefs(decl_spec_t *declspec, declarator_list_t *decls, attr_list_t *attrs)
 {
   const declarator_t *decl;
-  type_t *type = decltype->type;
+  type_t *type = declspec->type;
 
   if (is_attr(attrs, ATTR_UUID) && !is_attr(attrs, ATTR_PUBLIC))
     attrs = append_attr( attrs, make_attr(ATTR_PUBLIC) );
@@ -2111,8 +2111,8 @@ static type_t *reg_typedefs(decl_type_t *decltype, declarator_list_t *decls, att
                     cur->name, cur->loc_info.input_name,
                     cur->loc_info.line_number);
 
-      name = declare_var(attrs, decltype, decl, 0);
-      cur = type_new_alias(&name->decltype, name->name, current_namespace);
+      name = declare_var(attrs, declspec, decl, 0);
+      cur = type_new_alias(&name->declspec, name->name, current_namespace);
       cur->attrs = attrs;
 
       if (is_incomplete(cur))
@@ -2387,10 +2387,10 @@ static attr_list_t *check_iface_attrs(const char *name, attr_list_t *attrs)
     if (attr->type == ATTR_IMPLICIT_HANDLE)
     {
         const var_t *var = attr->u.pval;
-        if (type_get_type( var->decltype.type) == TYPE_BASIC &&
-            type_basic_get_type( var->decltype.type ) == TYPE_BASIC_HANDLE)
+        if (type_get_type( var->declspec.type) == TYPE_BASIC &&
+            type_basic_get_type( var->declspec.type ) == TYPE_BASIC_HANDLE)
             continue;
-        if (is_aliaschain_attr( var->decltype.type, ATTR_HANDLE ))
+        if (is_aliaschain_attr( var->declspec.type, ATTR_HANDLE ))
             continue;
       error_loc("attribute %s requires a handle type in interface %s\n",
                 allowed_attr[attr->type].display_name, name);
@@ -2622,7 +2622,7 @@ static void check_remoting_fields(const var_t *var, type_t *type);
 static void check_field_common(const type_t *container_type,
                                const char *container_name, const var_t *arg)
 {
-    type_t *type = arg->decltype.type;
+    type_t *type = arg->declspec.type;
     int more_to_do;
     const char *container_type_name;
     const char *var_type;
@@ -2652,7 +2652,7 @@ static void check_field_common(const type_t *container_type,
     }
 
     if (is_attr(arg->attrs, ATTR_LENGTHIS) &&
-        (is_attr(arg->attrs, ATTR_STRING) || is_aliaschain_attr(arg->decltype.type, ATTR_STRING)))
+        (is_attr(arg->attrs, ATTR_STRING) || is_aliaschain_attr(arg->declspec.type, ATTR_STRING)))
         error_loc_info(&arg->loc_info,
                        "string and length_is specified for argument %s are mutually exclusive attributes\n",
                        arg->name);
@@ -2796,7 +2796,7 @@ static void check_remoting_fields(const var_t *var, type_t *type)
         fields = type_union_get_cases(type);
 
     if (fields) LIST_FOR_EACH_ENTRY( field, fields, const var_t, entry )
-        if (field->decltype.type) check_field_common(type, type->name, field);
+        if (field->declspec.type) check_field_common(type, type->name, field);
 }
 
 /* checks that arguments for a function make sense for marshalling and unmarshalling */
@@ -2805,9 +2805,9 @@ static void check_remoting_args(const var_t *func)
     const char *funcname = func->name;
     const var_t *arg;
 
-    if (func->decltype.type->details.function->args) LIST_FOR_EACH_ENTRY( arg, func->decltype.type->details.function->args, const var_t, entry )
+    if (func->declspec.type->details.function->args) LIST_FOR_EACH_ENTRY( arg, func->declspec.type->details.function->args, const var_t, entry )
     {
-        const type_t *type = arg->decltype.type;
+        const type_t *type = arg->declspec.type;
 
         /* check that [out] parameters have enough pointer levels */
         if (is_attr(arg->attrs, ATTR_OUT))
@@ -2847,16 +2847,16 @@ static void check_remoting_args(const var_t *func)
             }
         }
 
-        check_field_common(func->decltype.type, funcname, arg);
+        check_field_common(func->declspec.type, funcname, arg);
     }
 
-    if (type_get_type(type_function_get_rettype(func->decltype.type)) != TYPE_VOID)
+    if (type_get_type(type_function_get_rettype(func->declspec.type)) != TYPE_VOID)
     {
         var_t var;
         var = *func;
-        var.decltype.type = type_function_get_rettype(func->decltype.type);
+        var.declspec.type = type_function_get_rettype(func->declspec.type);
         var.name = xstrdup("return value");
-        check_field_common(func->decltype.type, funcname, &var);
+        check_field_common(func->declspec.type, funcname, &var);
         free(var.name);
     }
 }
@@ -2873,8 +2873,8 @@ static void add_explicit_handle_if_necessary(const type_t *iface, var_t *func)
          * function */
         var_t *idl_handle = make_var(xstrdup("IDL_handle"));
         idl_handle->attrs = append_attr(NULL, make_attr(ATTR_IN));
-        idl_handle->decltype.type = find_type_or_error("handle_t", 0);
-        type_function_add_head_arg(func->decltype.type, idl_handle);
+        idl_handle->declspec.type = find_type_or_error("handle_t", 0);
+        type_function_add_head_arg(func->declspec.type, idl_handle);
     }
 }
 
@@ -2955,7 +2955,7 @@ static void check_async_uuid(type_t *iface)
         var_t *begin_func, *finish_func, *func = stmt->u.var, *arg;
         var_list_t *begin_args = NULL, *finish_args = NULL, *args;
 
-        args = func->decltype.type->details.function->args;
+        args = func->declspec.type->details.function->args;
         if (args) LIST_FOR_EACH_ENTRY(arg, args, var_t, entry)
         {
             if (is_attr(arg->attrs, ATTR_IN) || !is_attr(arg->attrs, ATTR_OUT))
@@ -2965,15 +2965,15 @@ static void check_async_uuid(type_t *iface)
         }
 
         begin_func = copy_var(func, concat_str("Begin_", func->name), NULL);
-        begin_func->decltype.type = type_new_function(begin_args);
-        begin_func->decltype.type->attrs = func->attrs;
-        begin_func->decltype.type->details.function->retval = func->decltype.type->details.function->retval;
+        begin_func->declspec.type = type_new_function(begin_args);
+        begin_func->declspec.type->attrs = func->attrs;
+        begin_func->declspec.type->details.function->retval = func->declspec.type->details.function->retval;
         stmts = append_statement(stmts, make_statement_declaration(begin_func));
 
         finish_func = copy_var(func, concat_str("Finish_", func->name), NULL);
-        finish_func->decltype.type = type_new_function(finish_args);
-        finish_func->decltype.type->attrs = func->attrs;
-        finish_func->decltype.type->details.function->retval = func->decltype.type->details.function->retval;
+        finish_func->declspec.type = type_new_function(finish_args);
+        finish_func->declspec.type->attrs = func->attrs;
+        finish_func->declspec.type->details.function->retval = func->declspec.type->details.function->retval;
         stmts = append_statement(stmts, make_statement_declaration(finish_func));
     }
 
@@ -3025,10 +3025,10 @@ static void check_all_user_types(const statement_list_t *stmts)
       const statement_t *stmt_func;
       STATEMENTS_FOR_EACH_FUNC(stmt_func, type_iface_get_stmts(stmt->u.type)) {
         const var_t *func = stmt_func->u.var;
-        if (func->decltype.type->details.function->args)
-          LIST_FOR_EACH_ENTRY( v, func->decltype.type->details.function->args, const var_t, entry )
-            check_for_additional_prototype_types(v->decltype.type);
-        check_for_additional_prototype_types(type_function_get_rettype(func->decltype.type));
+        if (func->declspec.type->details.function->args)
+          LIST_FOR_EACH_ENTRY( v, func->declspec.type->details.function->args, const var_t, entry )
+            check_for_additional_prototype_types(v->declspec.type);
+        check_for_additional_prototype_types(type_function_get_rettype(func->declspec.type));
       }
     }
   }
@@ -3076,16 +3076,16 @@ static statement_t *make_statement_declaration(var_t *var)
 {
     statement_t *stmt = make_statement(STMT_DECLARATION);
     stmt->u.var = var;
-    if (var->decltype.stgclass == STG_EXTERN && var->eval)
+    if (var->declspec.stgclass == STG_EXTERN && var->eval)
         warning("'%s' initialised and declared extern\n", var->name);
     if (is_const_decl(var))
     {
         if (var->eval)
             reg_const(var);
     }
-    else if (type_get_type(var->decltype.type) == TYPE_FUNCTION)
+    else if (type_get_type(var->declspec.type) == TYPE_FUNCTION)
         check_function_attrs(var->name, var->attrs);
-    else if (var->decltype.stgclass == STG_NONE || var->decltype.stgclass == STG_REGISTER)
+    else if (var->declspec.stgclass == STG_NONE || var->declspec.stgclass == STG_REGISTER)
         error_loc("instantiation of data is illegal\n");
     return stmt;
 }
@@ -3136,28 +3136,40 @@ static statement_t *make_statement_typedef(declarator_list_t *decls)
 {
     declarator_t *decl, *next;
     statement_t *stmt;
-    typedef_list_t **typedef_list;
+    type_list_t **type_list;
 
     if (!decls) return NULL;
 
     stmt = make_statement(STMT_TYPEDEF);
-    stmt->u.typedef_list = NULL;
-    typedef_list = &stmt->u.typedef_list;
+    stmt->u.type_list = NULL;
+    type_list = &stmt->u.type_list;
 
     LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
     {
+#if 0    
         var_t *var = decl->var;
         type_t *type = find_type_or_error(var->name, 0);
-        var->decltype.type = type;
+        var->declspec.type = type;
 
-        assert(var->decltype.type->is_alias);
+        assert(var->declspec.type->is_alias);
 
-        *typedef_list = xmalloc(sizeof(typedef_list_t));
-        (*typedef_list)->var = var;
-        (*typedef_list)->next = NULL;
+        *type_list = xmalloc(sizeof(type_list_t));
+        (*type_list)->var = var;
+        (*type_list)->next = NULL;
 
-        typedef_list = &(*typedef_list)->next;
+        type_list = &(*type_list)->next;
         free(decl);
+#endif
+        var_t *var = decl->var;
+        type_t *type = find_type_or_error(var->name, 0);
+        assert(type->is_alias);
+        *type_list = xmalloc(sizeof(type_list_t));
+        (*type_list)->type = type;
+        (*type_list)->next = NULL;
+
+        type_list = &(*type_list)->next;
+        free(decl);
+        free(var);
     }
 
     return stmt;

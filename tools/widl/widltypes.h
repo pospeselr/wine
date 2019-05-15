@@ -40,7 +40,7 @@ typedef struct _attr_t attr_t;
 typedef struct _expr_t expr_t;
 typedef struct _type_t type_t;
 typedef struct _var_t var_t;
-typedef struct _decl_type_t decl_type_t;
+typedef struct _decl_spec_t decl_spec_t;
 typedef struct _declarator_t declarator_t;
 typedef struct _ifref_t ifref_t;
 typedef struct _typelib_entry_t typelib_entry_t;
@@ -50,7 +50,7 @@ typedef struct _typelib_t typelib_t;
 typedef struct _user_type_t user_type_t;
 typedef struct _user_type_t context_handle_t;
 typedef struct _user_type_t generic_handle_t;
-typedef struct _typedef_list_t typedef_list_t;
+typedef struct _type_list_t type_list_t;
 typedef struct _statement_t statement_t;
 typedef struct _warning_t warning_t;
 
@@ -306,12 +306,12 @@ struct str_list_entry_t
     struct list entry;
 };
 
-struct _decl_type_t
+struct _decl_spec_t
 {
-  struct _type_t *type;
+  type_t *type;
   enum storage_class stgclass;
   enum type_qualifier typequalifier;
-  enum function_specifier funcspecifier;
+  enum function_specifier funcspecifier;  
 };
 
 struct _attr_t {
@@ -319,7 +319,7 @@ struct _attr_t {
   union {
     unsigned int ival;
     void *pval;
-    struct _decl_type_t dtval;
+    struct _decl_spec_t dsval;
   } u;
   /* parser-internal */
   struct list entry;
@@ -378,7 +378,7 @@ struct array_details
 {
   expr_t *size_is;
   expr_t *length_is;
-  struct _decl_type_t elem;
+  struct _decl_spec_t elem;
   unsigned int dim;
   unsigned char ptr_def_fc;
   unsigned char declptr; /* if declared as a pointer */
@@ -398,19 +398,19 @@ struct basic_details
 
 struct pointer_details
 {
-  struct _decl_type_t ref;
+  struct _decl_spec_t ref;
   unsigned char def_fc;
 };
 
 struct bitfield_details
 {
-  struct _decl_type_t field;
+  struct _decl_spec_t field;
   const expr_t *bits;
 };
 
 struct typedef_details
 {
-  struct _decl_type_t aliasee;
+  struct _decl_spec_t aliasee;
 };
 
 #define HASHMAX 64
@@ -477,7 +477,7 @@ struct _type_t {
 
 struct _var_t {
   char *name;
-  decl_type_t decltype;
+  decl_spec_t declspec;
   attr_list_t *attrs;
   expr_t *eval;
   unsigned int procstring_offset;
@@ -550,14 +550,9 @@ struct _user_type_t {
     const char *name;
 };
 
-struct _typedef_list_t {
-  var_t *var;
-  struct _typedef_list_t *next;
-};
-
 struct _type_list_t {
-    type_t *type;
-    struct _type_list_t *next;
+  type_t* type;
+  struct _type_list_t *next;
 };
 
 struct _statement_t {
@@ -570,7 +565,7 @@ struct _statement_t {
         const char *str;
         var_t *var;
         typelib_t *lib;
-        typedef_list_t *typedef_list;
+        type_list_t *type_list;
     } u;
 };
 
@@ -628,8 +623,8 @@ static inline enum type_type type_get_type_detect_alias(const type_t *type)
 
 #define STATEMENTS_FOR_EACH_FUNC(stmt, stmts) \
   if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry ) \
-    if (stmt->type == STMT_DECLARATION && stmt->u.var->decltype.stgclass == STG_NONE && \
-        type_get_type_detect_alias(stmt->u.var->decltype.type) == TYPE_FUNCTION)
+    if (stmt->type == STMT_DECLARATION && stmt->u.var->declspec.stgclass == STG_NONE && \
+        type_get_type_detect_alias(stmt->u.var->declspec.type) == TYPE_FUNCTION)
 
 static inline int statements_has_func(const statement_list_t *stmts)
 {
@@ -648,13 +643,13 @@ static inline int is_global_namespace(const struct namespace *namespace)
     return !namespace->name;
 }
 
-static inline decl_type_t* init_decltype(decl_type_t *decltype, type_t *type)
+static inline decl_spec_t* init_declspec(decl_spec_t *declspec, type_t *type)
 {
-    decltype->type = type;
-    decltype->stgclass=STG_NONE;
-    decltype->typequalifier=TYPE_QUALIFIER_NONE;
-    decltype->funcspecifier=FUNCTION_SPECIFIER_NONE;
-    return decltype;
+    declspec->type = type;
+    declspec->stgclass=STG_NONE;
+    declspec->typequalifier=TYPE_QUALIFIER_NONE;
+    declspec->funcspecifier=FUNCTION_SPECIFIER_NONE;
+    return declspec;
 }
 
 #endif
