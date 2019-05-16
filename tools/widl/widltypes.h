@@ -311,7 +311,7 @@ struct _decl_spec_t
   type_t *type;
   enum storage_class stgclass;
   enum type_qualifier typequalifier;
-  enum function_specifier funcspecifier;  
+  enum function_specifier funcspecifier;
 };
 
 struct _attr_t {
