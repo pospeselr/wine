@@ -194,10 +194,10 @@ expr_t *make_exprt(enum expr_type type, var_t *var, expr_t *expr)
     expr_t *e;
     type_t *tref;
 
-    if (var->stgclass != STG_NONE && var->stgclass != STG_REGISTER)
+    if (var->declspec.stgclass != STG_NONE && var->declspec.stgclass != STG_REGISTER)
         error_loc("invalid storage class for type expression\n");
 
-    tref = var->type;
+    tref = var->declspec.type;
 
     e = xmalloc(sizeof(expr_t));
     e->type = type;
@@ -474,7 +474,7 @@ static type_t *find_identifier(const char *identifier, const type_t *cont_type, 
     if (fields) LIST_FOR_EACH_ENTRY( field, fields, const var_t, entry )
         if (field->name && !strcmp(identifier, field->name))
         {
-            type = field->type;
+            type = field->declspec.type;
             *found_in_cont_type = 1;
             break;
         }
@@ -482,7 +482,7 @@ static type_t *find_identifier(const char *identifier, const type_t *cont_type, 
     if (!type)
     {
         var_t *const_var = find_const(identifier, 0);
-        if (const_var) type = const_var->type;
+        if (const_var) type = const_var->declspec.type;
     }
 
     return type;
@@ -580,10 +580,10 @@ static struct expression_type resolve_expression(const struct expr_loc *expr_loc
     case EXPR_PPTR:
         result = resolve_expression(expr_loc, cont_type, e->ref);
         if (result.type && is_ptr(result.type))
-            result.type = type_pointer_get_ref(result.type);
+            result.type = type_pointer_get_ref_type(result.type);
         else if(result.type && is_array(result.type)
                             && type_array_is_decl_as_ptr(result.type))
-            result.type = type_array_get_element(result.type);
+            result.type = type_array_get_element_type(result.type);
         else
             error_loc_info(&expr_loc->v->loc_info, "dereference operator applied to non-pointer type in expression%s%s\n",
                            expr_loc->attr ? " for attribute " : "",
@@ -665,7 +665,7 @@ static struct expression_type resolve_expression(const struct expr_loc *expr_loc
         if (result.type && is_array(result.type))
         {
             struct expression_type index_result;
-            result.type = type_array_get_element(result.type);
+            result.type = type_array_get_element_type(result.type);
             index_result = resolve_expression(expr_loc, cont_type /* FIXME */, e->u.ext);
             if (!index_result.type || !is_integer_type(index_result.type))
                 error_loc_info(&expr_loc->v->loc_info, "array subscript not of integral type in expression%s%s\n",

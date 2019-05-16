@@ -40,6 +40,7 @@ typedef struct _attr_t attr_t;
 typedef struct _expr_t expr_t;
 typedef struct _type_t type_t;
 typedef struct _var_t var_t;
+typedef struct _decl_spec_t decl_spec_t;
 typedef struct _declarator_t declarator_t;
 typedef struct _ifref_t ifref_t;
 typedef struct _typelib_entry_t typelib_entry_t;
@@ -234,6 +235,18 @@ enum storage_class
     STG_REGISTER,
 };
 
+enum type_qualifier
+{
+    TYPE_QUALIFIER_NONE,
+    TYPE_QUALIFIER_CONST
+};
+
+enum function_specifier
+{
+    FUNCTION_SPECIFIER_NONE,
+    FUNCTION_SPECIFIER_INLINE,
+};
+
 enum statement_type
 {
     STMT_LIBRARY,
@@ -293,11 +306,20 @@ struct str_list_entry_t
     struct list entry;
 };
 
+struct _decl_spec_t
+{
+  type_t *type;
+  enum storage_class stgclass;
+  enum type_qualifier typequalifier;
+  enum function_specifier funcspecifier;
+};
+
 struct _attr_t {
   enum attr_type type;
   union {
     unsigned int ival;
     void *pval;
+    struct _decl_spec_t dsval;
   } u;
   /* parser-internal */
   struct list entry;
@@ -356,7 +378,7 @@ struct array_details
 {
   expr_t *size_is;
   expr_t *length_is;
-  struct _type_t *elem;
+  struct _decl_spec_t elem;
   unsigned int dim;
   unsigned char ptr_def_fc;
   unsigned char declptr; /* if declared as a pointer */
@@ -376,14 +398,19 @@ struct basic_details
 
 struct pointer_details
 {
-  struct _type_t *ref;
+  struct _decl_spec_t ref;
   unsigned char def_fc;
 };
 
 struct bitfield_details
 {
-  struct _type_t *field;
+  struct _decl_spec_t field;
   const expr_t *bits;
+};
+
+struct typedef_details
+{
+  struct _decl_spec_t aliasee;
 };
 
 #define HASHMAX 64
@@ -431,9 +458,9 @@ struct _type_t {
     struct basic_details basic;
     struct pointer_details pointer;
     struct bitfield_details bitfield;
+    struct typedef_details alias;
   } details;
   const char *c_name;
-  type_t *orig;                   /* dup'd types */
   unsigned int typestring_offset;
   unsigned int ptrdesc;           /* used for complex structs */
   int typelib_idx;
@@ -449,10 +476,9 @@ struct _type_t {
 
 struct _var_t {
   char *name;
-  type_t *type;
+  decl_spec_t declspec;
   attr_list_t *attrs;
   expr_t *eval;
-  enum storage_class stgclass;
   unsigned int procstring_offset;
   unsigned int typestring_offset;
 
@@ -596,8 +622,8 @@ static inline enum type_type type_get_type_detect_alias(const type_t *type)
 
 #define STATEMENTS_FOR_EACH_FUNC(stmt, stmts) \
   if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry ) \
-    if (stmt->type == STMT_DECLARATION && stmt->u.var->stgclass == STG_NONE && \
-        type_get_type_detect_alias(stmt->u.var->type) == TYPE_FUNCTION)
+    if (stmt->type == STMT_DECLARATION && stmt->u.var->declspec.stgclass == STG_NONE && \
+        type_get_type_detect_alias(stmt->u.var->declspec.type) == TYPE_FUNCTION)
 
 static inline int statements_has_func(const statement_list_t *stmts)
 {
@@ -614,6 +640,15 @@ static inline int statements_has_func(const statement_list_t *stmts)
 static inline int is_global_namespace(const struct namespace *namespace)
 {
     return !namespace->name;
+}
+
+static inline decl_spec_t* init_declspec(decl_spec_t *declspec, type_t *type)
+{
+    declspec->type = type;
+    declspec->stgclass=STG_NONE;
+    declspec->typequalifier=TYPE_QUALIFIER_NONE;
+    declspec->funcspecifier=FUNCTION_SPECIFIER_NONE;
+    return declspec;
 }
 
 #endif

@@ -28,11 +28,14 @@ extern int is_aliaschain_attr(const type_t *var, enum attr_type t);
 extern int is_attr(const attr_list_t *list, enum attr_type t);
 extern void *get_attrp(const attr_list_t *list, enum attr_type t);
 extern unsigned int get_attrv(const attr_list_t *list, enum attr_type t);
+extern decl_spec_t *get_attrds(const attr_list_t *list, enum attr_type t);
 extern const char* get_name(const var_t *v);
+extern void write_declspec_left(FILE *h, decl_spec_t *ds, enum name_type name_type, int declonly);
 extern void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly);
 extern void write_type_right(FILE *h, type_t *t, int is_field);
 extern void write_type_decl(FILE *f, type_t *t, const char *name);
-extern void write_type_decl_left(FILE *f, type_t *t);
+extern void write_declspec_decl(FILE *f, decl_spec_t *ds, const char *name);
+extern void write_declspec_decl_left(FILE *f, decl_spec_t *ds);
 extern unsigned int get_context_handle_offset( const type_t *type );
 extern unsigned int get_generic_handle_offset( const type_t *type );
 extern int needs_space_after(type_t *t);
@@ -83,12 +86,12 @@ static inline int is_conformant_array(const type_t *t)
 
 static inline int last_ptr(const type_t *type)
 {
-    return is_ptr(type) && !is_declptr(type_pointer_get_ref(type));
+    return is_ptr(type) && !is_declptr(type_pointer_get_ref_type(type));
 }
 
 static inline int last_array(const type_t *type)
 {
-    return is_array(type) && !is_array(type_array_get_element(type));
+    return is_array(type) && !is_array(type_array_get_element_type(type));
 }
 
 static inline int is_string_type(const attr_list_t *attrs, const type_t *type)
@@ -102,7 +105,7 @@ static inline int is_context_handle(const type_t *type)
     const type_t *t;
     for (t = type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref(t))
+         t = type_is_alias(t) ? type_alias_get_aliasee_type(t) : type_pointer_get_ref_type(t))
         if (is_attr(t->attrs, ATTR_CONTEXTHANDLE))
             return 1;
     return 0;
