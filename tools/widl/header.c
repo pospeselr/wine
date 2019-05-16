@@ -521,7 +521,7 @@ static void write_type_v(FILE *h, decl_spec_t *ds, int is_field, int declonly, c
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      if (dpt->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
+      if (!is_ptr(ds->type) && dpt->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
       write_declspec_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly);
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
@@ -1435,6 +1435,7 @@ static void write_function_proto(FILE *header, const type_t *iface, const var_t 
   if (!callconv) callconv = "__cdecl";
   /* FIXME: do we need to handle call_as? */
   write_declspec_decl_left(header, type_function_get_retdeclspec(fun->declspec.type));
+  if (fun->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(header, " inline");
   fprintf(header, " %s ", callconv);
   fprintf(header, "%s%s(\n", prefix, get_name(fun));
   if (type_get_function_args(fun->declspec.type))
