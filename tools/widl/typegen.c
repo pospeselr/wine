@@ -2278,7 +2278,7 @@ static unsigned int write_user_tfs(FILE *file, decl_spec_t *declspec, unsigned i
     const char *name = NULL;
     type_t *type = declspec->type;
     decl_spec_t *udeclspec = get_user_declspec(type, &name);
-    type_t *utype = udeclspec ? udeclspec->type : NULL;
+    type_t *utype = get_user_type(type, &name);
     unsigned int usize = type_memsize(utype);
     unsigned int ualign = type_buffer_alignment(utype);
     unsigned int size = type_memsize(type);
@@ -2382,32 +2382,32 @@ static void write_member_type(FILE *file, const type_t *cont,
 static void write_array_element_type(FILE *file, const attr_list_t *attrs, const type_t *type,
                                      int cont_is_complex, unsigned int *tfsoff)
 {
-    decl_spec_t *elem = type_array_get_element(type);
-    type_t *elemtype = elem->type;
+    decl_spec_t *element = type_array_get_element(type);
+    type_t *elem = element->type;
 
-    if (!is_embedded_complex(elemtype) && is_ptr(elemtype))
+    if (!is_embedded_complex(elem) && is_ptr(elem))
     {
-        type_t *ref = type_pointer_get_ref_type(elemtype);
+        type_t *ref = type_pointer_get_ref_type(elem);
 
         if (processed(ref))
         {
-            write_nonsimple_pointer(file, NULL, elemtype, TYPE_CONTEXT_CONTAINER,
+            write_nonsimple_pointer(file, NULL, elem, TYPE_CONTEXT_CONTAINER,
                                     ref->typestring_offset, tfsoff);
             return;
         }
-        if (cont_is_complex && is_string_type(attrs, elemtype))
+        if (cont_is_complex && is_string_type(attrs, elem))
         {
-            write_string_tfs(file, NULL, elem, TYPE_CONTEXT_CONTAINER, NULL, tfsoff);
+            write_string_tfs(file, NULL, element, TYPE_CONTEXT_CONTAINER, NULL, tfsoff);
             return;
         }
-        if (!is_string_type(NULL, elemtype) &&
+        if (!is_string_type(NULL, elem) &&
             (type_get_type(ref) == TYPE_BASIC || type_get_type(ref) == TYPE_ENUM))
         {
-            *tfsoff += write_simple_pointer(file, NULL, elemtype, TYPE_CONTEXT_CONTAINER);
+            *tfsoff += write_simple_pointer(file, NULL, elem, TYPE_CONTEXT_CONTAINER);
             return;
         }
     }
-    write_member_type(file, type, cont_is_complex, NULL, elemtype, NULL, tfsoff);
+    write_member_type(file, type, cont_is_complex, NULL, elem, NULL, tfsoff);
 }
 
 static void write_end(FILE *file, unsigned int *tfsoff)
@@ -2860,9 +2860,7 @@ static unsigned int write_string_tfs(FILE *file, const attr_list_t *attrs,
         int pointer_type = get_pointer_fc_context(type, attrs, context);
         if (!pointer_type)
             pointer_type = FC_RP;
-
         print_start_tfs_comment(file, declspec, *typestring_offset);
-
         print_file(file, 2,"0x%x, 0x%x,\t/* %s%s */\n",
                    pointer_type, flag, string_of_type(pointer_type),
                    flag ? " [simple_pointer]" : "");
@@ -3346,7 +3344,6 @@ static unsigned int write_union_tfs(FILE *file, const attr_list_t *attrs,
     start_offset = *tfsoff;
     update_tfsoff(type, start_offset, file);
     print_start_tfs_comment(file, declspec, start_offset);
-
     if (type_get_type(type) == TYPE_ENCAPSULATED_UNION)
     {
         const var_t *sv = type_union_get_switch_value(type);
@@ -4703,7 +4700,7 @@ void assign_stub_out_args( FILE *file, int indent, const var_t *func, const char
     int in_attr, out_attr;
     int i = 0, sep = 0;
     const var_t *var;
-    type_t *reftype;
+    type_t *ref;
 
     if (!type_get_function_args(func->declspec.type))
         return;
@@ -4762,8 +4759,8 @@ void assign_stub_out_args( FILE *file, int indent, const var_t *func, const char
                 break;
             case TGT_POINTER:
                 fprintf(file, " = &%s_W%u;\n", local_var_prefix, i);
-                reftype = type_pointer_get_ref_type(var->declspec.type);
-                switch (typegen_detect_type(reftype, var->attrs, TDT_IGNORE_STRINGS))
+                ref = type_pointer_get_ref_type(var->declspec.type);
+                switch (typegen_detect_type(ref, var->attrs, TDT_IGNORE_STRINGS))
                 {
                 case TGT_BASIC:
                 case TGT_ENUM:
@@ -4777,16 +4774,16 @@ void assign_stub_out_args( FILE *file, int indent, const var_t *func, const char
                                local_var_prefix, i, local_var_prefix, i);
                     break;
                 case TGT_ARRAY:
-                    if (type_array_is_decl_as_ptr(reftype))
+                    if (type_array_is_decl_as_ptr(ref))
                     {
                         print_file(file, indent, "%s_W%u = 0;\n", local_var_prefix, i);
                         break;
                     }
-                    reftype = type_array_get_element_type(reftype);
+                    ref = type_array_get_element_type(ref);
                     /* fall through */
                 case TGT_STRUCT:
                 case TGT_UNION:
-                    if (type_has_pointers(reftype))
+                    if (type_has_pointers(ref))
                         print_file(file, indent, "memset(&%s_W%u, 0, sizeof(%s_W%u));\n",
                                    local_var_prefix, i, local_var_prefix, i);
                     break;

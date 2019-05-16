@@ -223,12 +223,10 @@ type_t *type_new_array(const char *name, const decl_spec_t *element, int declptr
     if (name) t->name = xstrdup(name);
     t->details.array.declptr = declptr;
     t->details.array.length_is = length_is;
-    if (size_is) {
+    if (size_is)
         t->details.array.size_is = size_is;
-    }
-    else {
+    else
         t->details.array.dim = dim;
-    }
     if (element) {
         t->details.array.elem = *element;
     }
@@ -267,6 +265,7 @@ type_t *type_new_void(void)
     return void_type;
 }
 
+/* TODO: move this to subsequent patch */
 type_t *type_new_enum(const char *name, struct namespace *namespace, int defined, var_list_t *enums)
 {
     type_t *t;
@@ -296,6 +295,7 @@ type_t *type_new_enum(const char *name, struct namespace *namespace, int defined
     return t;
 }
 
+/* TODO: move this to subsequent patch */
 type_t *type_new_struct(char *name, struct namespace *namespace, int defined, var_list_t *fields)
 {
     type_t *t;
@@ -325,6 +325,7 @@ type_t *type_new_struct(char *name, struct namespace *namespace, int defined, va
     return t;
 }
 
+/* TODO: move this to subsequent patch */
 type_t *type_new_nonencapsulated_union(const char *name, int defined, var_list_t *fields)
 {
     type_t *t;

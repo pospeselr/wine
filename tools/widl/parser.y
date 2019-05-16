@@ -65,11 +65,11 @@ static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
-static attr_t *make_attrdt(enum attr_type type, type_t *val);
+static attr_t *make_attrds(enum attr_type type, type_t *val);
 static expr_list_t *append_expr(expr_list_t *list, expr_t *expr);
 static type_t *append_array(type_t *chain, expr_t *expr);
-static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl, int top);
-static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *declspec, declarator_list_t *decls);
+static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const declarator_t *decl, int top);
+static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *decl_spec, declarator_list_t *decls);
 static ifref_list_t *append_ifref(ifref_list_t *list, ifref_t *iface);
 static ifref_t *make_ifref(type_t *iface);
 static var_list_t *append_var_list(var_list_t *list, var_list_t *vars);
@@ -80,7 +80,7 @@ static typelib_t *make_library(const char *name, const attr_list_t *attrs);
 static type_t *append_chain_type(type_t *chain, type_t *type);
 static warning_list_t *append_warning(warning_list_t *, int);
 
-static type_t *reg_typedefs(decl_spec_t *declspec, var_list_t *names, attr_list_t *attrs);
+static type_t *reg_typedefs(decl_spec_t *decl_spec, var_list_t *names, attr_list_t *attrs);
 static type_t *find_type_or_error(const char *name, int t);
 static type_t *find_type_or_error2(char *name, int t);
 
@@ -592,7 +592,7 @@ attribute:					{ $$ = NULL; }
 	| tVARARG				{ $$ = make_attr(ATTR_VARARG); }
 	| tVERSION '(' version ')'		{ $$ = make_attrv(ATTR_VERSION, $3); }
 	| tVIPROGID '(' aSTRING ')'		{ $$ = make_attrp(ATTR_VIPROGID, $3); }
-	| tWIREMARSHAL '(' type ')'		{ $$ = make_attrdt(ATTR_WIREMARSHAL, $3); }
+	| tWIREMARSHAL '(' type ')'		{ $$ = make_attrds(ATTR_WIREMARSHAL, $3); }
 	| pointer_type				{ $$ = make_attrv(ATTR_POINTERTYPE, $1); }
 	;
 
@@ -1192,8 +1192,8 @@ static void decl_builtin_basic(const char *name, enum type_basic_type type)
 
 static void decl_builtin_alias(const char *name, type_t *t)
 {
-  decl_spec_t declspec;
-  reg_type(type_new_alias(init_declspec(&declspec, t), name, &global_namespace), name, &global_namespace, 0);
+  decl_spec_t ds;
+  reg_type(type_new_alias(init_declspec(&ds, t), name, &global_namespace), name, &global_namespace, 0);
 }
 
 void init_types(void)
@@ -1420,7 +1420,7 @@ static attr_t *make_attrp(enum attr_type type, void *val)
   return a;
 }
 
-static attr_t *make_attrdt(enum attr_type type, type_t *val)
+static attr_t *make_attrds(enum attr_type type, type_t *val)
 {
   attr_t *a = NULL;
   assert(type == ATTR_WIREMARSHAL);
@@ -1581,7 +1581,7 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const declarator_t *decl,
+static var_t *declare_var(attr_list_t *attrs, decl_spec_t *declspec, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1799,18 +1799,18 @@ static var_t *declare_var(attr_list_t *attrs, const decl_spec_t *declspec, const
   return v;
 }
 
-static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *declspec, declarator_list_t *decls)
+static var_list_t *set_var_types(attr_list_t *attrs, decl_spec_t *decl_spec, declarator_list_t *decls)
 {
   declarator_t *decl, *next;
   var_list_t *var_list = NULL;
 
   LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
   {
-    var_t *var = declare_var(attrs, declspec, decl, 0);
+    var_t *var = declare_var(attrs, decl_spec, decl, 0);
     var_list = append_var(var_list, var);
     free(decl);
   }
-  free(declspec);
+  free(decl_spec);
   return var_list;
 }
 
@@ -2064,10 +2064,10 @@ static void fix_incomplete_types(type_t *complete_type)
   }
 }
 
-static type_t *reg_typedefs(decl_spec_t *declspec, declarator_list_t *decls, attr_list_t *attrs)
+static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, attr_list_t *attrs)
 {
   const declarator_t *decl;
-  type_t *type = declspec->type;
+  type_t *type = decl_spec->type;
 
   if (is_attr(attrs, ATTR_UUID) && !is_attr(attrs, ATTR_PUBLIC))
     attrs = append_attr( attrs, make_attr(ATTR_PUBLIC) );
@@ -2111,7 +2111,7 @@ static type_t *reg_typedefs(decl_spec_t *declspec, declarator_list_t *decls, att
                     cur->name, cur->loc_info.input_name,
                     cur->loc_info.line_number);
 
-      name = declare_var(attrs, declspec, decl, 0);
+      name = declare_var(attrs, decl_spec, decl, 0);
       cur = type_new_alias(&name->declspec, name->name, current_namespace);
       cur->attrs = attrs;
 
@@ -3146,23 +3146,8 @@ static statement_t *make_statement_typedef(declarator_list_t *decls)
 
     LIST_FOR_EACH_ENTRY_SAFE( decl, next, decls, declarator_t, entry )
     {
-#if 0    
         var_t *var = decl->var;
         type_t *type = find_type_or_error(var->name, 0);
-        var->declspec.type = type;
-
-        assert(var->declspec.type->is_alias);
-
-        *type_list = xmalloc(sizeof(type_list_t));
-        (*type_list)->var = var;
-        (*type_list)->next = NULL;
-
-        type_list = &(*type_list)->next;
-        free(decl);
-#endif
-        var_t *var = decl->var;
-        type_t *type = find_type_or_error(var->name, 0);
-        assert(type->is_alias);
         *type_list = xmalloc(sizeof(type_list_t));
         (*type_list)->type = type;
         (*type_list)->next = NULL;

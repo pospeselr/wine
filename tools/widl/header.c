@@ -123,6 +123,7 @@ unsigned int get_attrv(const attr_list_t *list, enum attr_type t)
 decl_spec_t *get_attrds(const attr_list_t *list, enum attr_type t)
 {
     const attr_t *attr;
+    /* only wire_marshal attrtibute uses the declspec */
     assert(t == ATTR_WIREMARSHAL);
     if (list) LIST_FOR_EACH_ENTRY( attr, list, const attr_t, entry )
         if (attr->type == t) return (decl_spec_t*)&attr->u.dsval;
@@ -303,6 +304,12 @@ static void write_pointer_left(FILE *h, type_t *ref)
     fprintf(h, "*");
 }
 
+void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
+{
+  decl_spec_t ds;
+  write_declspec_left(h, init_declspec(&ds, t), name_type, declonly);
+}
+
 void write_declspec_left(FILE* h, decl_spec_t *ds, enum name_type name_type, int declonly)
 {
   const char *name;
@@ -364,11 +371,7 @@ void write_declspec_left(FILE* h, decl_spec_t *ds, enum name_type name_type, int
       {
         write_declspec_left(h, type_pointer_get_ref(t), name_type, declonly);
         write_pointer_left(h, type_pointer_get_ref_type(t));
-
-        if (ds->typequalifier == TYPE_QUALIFIER_CONST) {
-          fprintf(h, "const ");
-        }
-
+        if (ds->typequalifier == TYPE_QUALIFIER_CONST) fprintf(h, "const ");
         break;
       }
       case TYPE_ARRAY:
@@ -449,12 +452,6 @@ void write_declspec_left(FILE* h, decl_spec_t *ds, enum name_type name_type, int
   }
 }
 
-void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
-{
-  decl_spec_t ds;
-  write_declspec_left(h, init_declspec(&ds, t), name_type, declonly);
-}
-
 void write_type_right(FILE *h, type_t *t, int is_field)
 {
   if (!h) return;
@@ -464,10 +461,10 @@ void write_type_right(FILE *h, type_t *t, int is_field)
   {
   case TYPE_ARRAY:
   {
-    type_t *elemtype = type_array_get_element_type(t);
+    type_t *elem = type_array_get_element_type(t);
     if (type_array_is_decl_as_ptr(t))
     {
-      if (!type_is_alias(elemtype) && is_array(elemtype) && !type_array_is_decl_as_ptr(elemtype))
+      if (!type_is_alias(elem) && is_array(elem) && !type_array_is_decl_as_ptr(elem))
         fprintf(h, ")");
     }
     else
@@ -477,7 +474,7 @@ void write_type_right(FILE *h, type_t *t, int is_field)
       else
         fprintf(h, "[%u]", type_array_get_dim(t));
     }
-    write_type_right(h, elemtype, FALSE);
+    write_type_right(h, elem, FALSE);
     break;
   }
   case TYPE_POINTER:
@@ -510,12 +507,12 @@ static void write_type_v(FILE *h, decl_spec_t *ds, int is_field, int declonly, c
 {
   type_t *t = ds->type;
   type_t *pt = NULL;
-  decl_spec_t *dpt = NULL;
   int ptr_level = 0;
 
   if (!h) return;
 
   if (t) {
+    decl_spec_t *dpt = NULL;
     for (dpt = ds; is_ptr(dpt->type); dpt = type_pointer_get_ref(dpt->type), ptr_level++)
       ;
     pt = dpt->type;
@@ -524,9 +521,8 @@ static void write_type_v(FILE *h, decl_spec_t *ds, int is_field, int declonly, c
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      if (!is_ptr(ds->type) && ds->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
-        fprintf(h, "inline ");
-      }
+      /* TODO: is the is_ptr check here needed (I think it was so that we don't have pointers to inline functions?) */
+      if (!is_ptr(ds->type) && ds->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
       write_declspec_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly);
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
@@ -1440,6 +1436,7 @@ static void write_function_proto(FILE *header, const type_t *iface, const var_t 
   if (!callconv) callconv = "__cdecl";
   /* FIXME: do we need to handle call_as? */
   write_declspec_decl_left(header, type_function_get_retdeclspec(fun->declspec.type));
+  /* TODO: put this in the smaller bugfix patch */
   if (fun->declspec.funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     fprintf(header, " inline");
   }
@@ -1770,7 +1767,7 @@ static void write_header_stmts(FILE *header, const statement_list_t *stmts, cons
       {
         const type_list_t *type_entry = stmt->u.type_list;
         for (; type_entry; type_entry = type_entry->next)
-	        write_typedef(header, type_entry->type);
+	  write_typedef(header, type_entry->type);
         break;
       }
       case STMT_LIBRARY:

@@ -474,7 +474,6 @@ struct _type_t {
   unsigned int is_alias : 1; /* is the type an alias? */
 };
 
-
 struct _var_t {
   char *name;
   decl_spec_t declspec;
@@ -551,8 +550,8 @@ struct _user_type_t {
 };
 
 struct _type_list_t {
-  type_t* type;
-  struct _type_list_t *next;
+    type_t *type;
+    struct _type_list_t *next;
 };
 
 struct _statement_t {
