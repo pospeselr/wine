@@ -53,11 +53,16 @@ WINE_DEFAULT_DEBUG_CHANNEL(time);
 
 #define CALINFO_MAX_YEAR 2029
 
-#define LL2FILETIME( ll, pft )\
-    (pft)->dwLowDateTime = (UINT)(ll); \
-    (pft)->dwHighDateTime = (UINT)((ll) >> 32);
-#define FILETIME2LL( pft, ll) \
-    ll = (((LONGLONG)((pft)->dwHighDateTime))<<32) + (pft)-> dwLowDateTime ;
+static inline void longlong_to_filetime( LONGLONG t, FILETIME *ft )
+{
+    ft->dwLowDateTime = (DWORD)t;
+    ft->dwHighDateTime = (DWORD)(t >> 32);
+}
+
+static inline LONGLONG filetime_to_longlong( const FILETIME *ft )
+{
+    return (((LONGLONG)ft->dwHighDateTime) << 32) + ft->dwLowDateTime;
+}
 
 static const WCHAR mui_stdW[] = { 'M','U','I','_','S','t','d',0 };
 static const WCHAR mui_dltW[] = { 'M','U','I','_','D','l','t',0 };
@@ -141,7 +146,7 @@ static int TIME_DayLightCompareDate( const SYSTEMTIME *date,
  *
  *  PARAMS
  *      pTZinfo     [in] The time zone data.
- *      lpFileTime  [in] The system or local time.
+ *      time        [in] The system or local time.
  *      islocal     [in] it is local time.
  *
  *  RETURNS
@@ -151,14 +156,13 @@ static int TIME_DayLightCompareDate( const SYSTEMTIME *date,
  *      TIME_ZONE_ID_DAYLIGHT   Current time is daylight savings time
  */
 static DWORD TIME_CompTimeZoneID ( const TIME_ZONE_INFORMATION *pTZinfo,
-    FILETIME *lpFileTime, BOOL islocal )
+                                   LONGLONG time, BOOL islocal )
 {
     int ret, year;
     BOOL beforeStandardDate, afterDaylightDate;
     DWORD retval = TIME_ZONE_ID_INVALID;
-    LONGLONG llTime = 0; /* initialized to prevent gcc complaining */
     SYSTEMTIME SysTime;
-    FILETIME ftTemp;
+    FILETIME ft;
 
     if (pTZinfo->DaylightDate.wMonth != 0)
     {
@@ -176,20 +180,17 @@ static DWORD TIME_CompTimeZoneID ( const TIME_ZONE_INFORMATION *pTZinfo,
             return TIME_ZONE_ID_INVALID;
         }
 
-        if (!islocal) {
-            FILETIME2LL( lpFileTime, llTime );
-            llTime -= pTZinfo->Bias * (LONGLONG)600000000;
-            LL2FILETIME( llTime, &ftTemp)
-            lpFileTime = &ftTemp;
-        }
+        if (!islocal)
+            time -= pTZinfo->Bias * (LONGLONG)600000000;
 
-        FileTimeToSystemTime(lpFileTime, &SysTime);
+        longlong_to_filetime( time, &ft );
+        FileTimeToSystemTime( &ft, &SysTime );
         year = SysTime.wYear;
 
         if (!islocal) {
-            llTime -= pTZinfo->DaylightBias * (LONGLONG)600000000;
-            LL2FILETIME( llTime, &ftTemp)
-            FileTimeToSystemTime(lpFileTime, &SysTime);
+            time -= pTZinfo->DaylightBias * (LONGLONG)600000000;
+            longlong_to_filetime( time, &ft );
+            FileTimeToSystemTime( &ft, &SysTime );
         }
 
         /* check for daylight savings */
@@ -203,14 +204,13 @@ static DWORD TIME_CompTimeZoneID ( const TIME_ZONE_INFORMATION *pTZinfo,
             beforeStandardDate = SysTime.wYear < year;
 
         if (!islocal) {
-            llTime -= ( pTZinfo->StandardBias - pTZinfo->DaylightBias )
-                * (LONGLONG)600000000;
-            LL2FILETIME( llTime, &ftTemp)
-            FileTimeToSystemTime(lpFileTime, &SysTime);
+            time -= ( pTZinfo->StandardBias - pTZinfo->DaylightBias ) * (LONGLONG)600000000;
+            longlong_to_filetime( time, &ft );
+            FileTimeToSystemTime( &ft, &SysTime );
         }
 
         if(year == SysTime.wYear) {
-            ret = TIME_DayLightCompareDate( &SysTime, &pTZinfo->DaylightDate);
+            ret = TIME_DayLightCompareDate( &SysTime, &pTZinfo->DaylightDate );
             if (ret == -2)
                 return TIME_ZONE_ID_INVALID;
 
@@ -219,7 +219,7 @@ static DWORD TIME_CompTimeZoneID ( const TIME_ZONE_INFORMATION *pTZinfo,
             afterDaylightDate = SysTime.wYear > year;
 
         retval = TIME_ZONE_ID_STANDARD;
-        if( pTZinfo->DaylightDate.wMonth <  pTZinfo->StandardDate.wMonth ) {
+        if( pTZinfo->DaylightDate.wMonth < pTZinfo->StandardDate.wMonth ) {
             /* Northern hemisphere */
             if( beforeStandardDate && afterDaylightDate )
                 retval = TIME_ZONE_ID_DAYLIGHT;
@@ -249,9 +249,10 @@ static DWORD TIME_CompTimeZoneID ( const TIME_ZONE_INFORMATION *pTZinfo,
  */
 static DWORD TIME_ZoneID( const TIME_ZONE_INFORMATION *pTzi )
 {
-    FILETIME ftTime;
-    GetSystemTimeAsFileTime( &ftTime);
-    return TIME_CompTimeZoneID( pTzi, &ftTime, FALSE);
+    LARGE_INTEGER now;
+
+    NtQuerySystemTime( &now );
+    return TIME_CompTimeZoneID( pTzi, now.QuadPart, FALSE );
 }
 
 /***********************************************************************
@@ -261,7 +262,7 @@ static DWORD TIME_ZoneID( const TIME_ZONE_INFORMATION *pTzi )
  *
  * PARAMS
  *  pTZinfo    [in]  The time zone data.
- *  lpFileTime [in]  The system or local time.
+ *  time       [in]  The system or local time.
  *  islocal    [in]  It is local time.
  *  pBias      [out] The calculated bias in minutes.
  *
@@ -269,10 +270,10 @@ static DWORD TIME_ZoneID( const TIME_ZONE_INFORMATION *pTzi )
  *  TRUE when the time zone bias was calculated.
  */
 static BOOL TIME_GetTimezoneBias( const TIME_ZONE_INFORMATION *pTZinfo,
-    FILETIME *lpFileTime, BOOL islocal, LONG *pBias )
+                                  LONGLONG time, BOOL islocal, LONG *pBias )
 {
     LONG bias = pTZinfo->Bias;
-    DWORD tzid = TIME_CompTimeZoneID( pTZinfo, lpFileTime, islocal);
+    DWORD tzid = TIME_CompTimeZoneID( pTZinfo, time, islocal );
 
     if( tzid == TIME_ZONE_ID_INVALID)
         return FALSE;
@@ -694,12 +695,12 @@ BOOL WINAPI SystemTimeToTzSpecificLocalTime(
 
     if (!SystemTimeToFileTime(lpUniversalTime, &ft))
         return FALSE;
-    FILETIME2LL( &ft, llTime)
-    if (!TIME_GetTimezoneBias(&tzinfo, &ft, FALSE, &lBias))
+    llTime = filetime_to_longlong( &ft );
+    if (!TIME_GetTimezoneBias(&tzinfo, llTime, FALSE, &lBias))
         return FALSE;
     /* convert minutes to 100-nanoseconds-ticks */
     llTime -= (LONGLONG)lBias * 600000000;
-    LL2FILETIME( llTime, &ft)
+    longlong_to_filetime( llTime, &ft );
 
     return FileTimeToSystemTime(&ft, lpLocalTime);
 }
@@ -739,46 +740,34 @@ BOOL WINAPI TzSpecificLocalTimeToSystemTime(
 
     if (!SystemTimeToFileTime(lpLocalTime, &ft))
         return FALSE;
-    FILETIME2LL( &ft, t)
-    if (!TIME_GetTimezoneBias(&tzinfo, &ft, TRUE, &lBias))
+    t = filetime_to_longlong( &ft );
+    if (!TIME_GetTimezoneBias(&tzinfo, t, TRUE, &lBias))
         return FALSE;
     /* convert minutes to 100-nanoseconds-ticks */
     t += (LONGLONG)lBias * 600000000;
-    LL2FILETIME( t, &ft)
+    longlong_to_filetime( t, &ft );
     return FileTimeToSystemTime(&ft, lpUniversalTime);
-}
-
-
-/***********************************************************************
- *              GetSystemTimeAsFileTime  (KERNEL32.@)
- *
- *  Get the current time in utc format.
- *
- *  RETURNS
- *   Nothing.
- */
-VOID WINAPI GetSystemTimeAsFileTime(
-    LPFILETIME time) /* [out] Destination for the current utc time */
-{
-    LARGE_INTEGER t;
-    NtQuerySystemTime( &t );
-    time->dwLowDateTime = t.u.LowPart;
-    time->dwHighDateTime = t.u.HighPart;
 }
 
 
 /***********************************************************************
  *              GetSystemTimePreciseAsFileTime  (KERNEL32.@)
  *
- *  Get the current time in utc format, with <1 us precision.
+ *  Get the current time in utc format with greater accuracy.
+ *
+ *  PARAMS
+ *   time [out] Destination for the current utc time
  *
  *  RETURNS
  *   Nothing.
  */
-VOID WINAPI GetSystemTimePreciseAsFileTime(
-    LPFILETIME time) /* [out] Destination for the current utc time */
+void WINAPI GetSystemTimePreciseAsFileTime( FILETIME *time )
 {
-    GetSystemTimeAsFileTime(time);
+    LARGE_INTEGER t;
+
+    t.QuadPart = RtlGetSystemTimePrecise();
+    time->dwLowDateTime = t.u.LowPart;
+    time->dwHighDateTime = t.u.HighPart;
 }
 
 
@@ -875,8 +864,8 @@ BOOL WINAPI GetProcessTimes( HANDLE hprocess, LPFILETIME lpCreationTime,
     TIME_ClockTimeToFileTime(tms.tms_stime,lpKernelTime);
     if (NtQueryInformationProcess( hprocess, ProcessTimes, &pti, sizeof(pti), NULL))
         return FALSE;
-    LL2FILETIME( pti.CreateTime.QuadPart, lpCreationTime);
-    LL2FILETIME( pti.ExitTime.QuadPart, lpExitTime);
+    longlong_to_filetime( pti.CreateTime.QuadPart, lpCreationTime );
+    longlong_to_filetime( pti.ExitTime.QuadPart, lpExitTime );
     return TRUE;
 }
 

@@ -553,6 +553,7 @@ static BOOL build_mapped_report_descriptor(struct platform_private *ext)
     descript_size += sizeof(CONTROLLER_TRIGGERS);
     descript_size += sizeof(CONTROLLER_BUTTONS);
     descript_size += sizeof(REPORT_HATSWITCH);
+    descript_size += sizeof(REPORT_PADDING);
     descript_size += test_haptic(ext);
 
     ext->axis_start = 0;
@@ -890,6 +891,7 @@ static void try_add_device(SDL_JoystickID index)
     WCHAR serial[34] = {0};
     char guid_str[34];
     BOOL is_xbox_gamepad;
+    WORD input = -1;
 
     SDL_Joystick* joystick;
     SDL_JoystickID id;
@@ -940,8 +942,12 @@ static void try_add_device(SDL_JoystickID index)
         button_count = pSDL_JoystickNumButtons(joystick);
         is_xbox_gamepad = (axis_count == 6  && button_count >= 14);
     }
+    if (is_xbox_gamepad)
+        input = 0;
 
-    device = bus_create_hid_device(sdl_driver_obj, sdl_busidW, vid, pid, version, id, serial, is_xbox_gamepad, &GUID_DEVCLASS_SDL, &sdl_vtbl, sizeof(struct platform_private));
+    device = bus_create_hid_device(sdl_driver_obj, sdl_busidW, vid, pid,
+            input, version, id, serial, is_xbox_gamepad, &GUID_DEVCLASS_SDL,
+            &sdl_vtbl, sizeof(struct platform_private));
 
     if (device)
     {
