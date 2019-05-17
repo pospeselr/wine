@@ -103,7 +103,7 @@ static inline BOOL IsLeapYear(int Year)
 }
 
 /* return a monotonic time counter, in Win32 ticks */
-static ULONGLONG monotonic_counter(void)
+static inline ULONGLONG monotonic_counter(void)
 {
     struct timeval now;
 
@@ -458,20 +458,79 @@ void WINAPI RtlTimeToElapsedTimeFields( const LARGE_INTEGER *Time, PTIME_FIELDS 
  * Get the current system time.
  *
  * PARAMS
- *   Time [O] Destination for the current system time.
+ *   time [O] Destination for the current system time.
  *
  * RETURNS
  *   Success: STATUS_SUCCESS.
  *   Failure: An NTSTATUS error code indicating the problem.
  */
-NTSTATUS WINAPI NtQuerySystemTime( PLARGE_INTEGER Time )
+NTSTATUS WINAPI NtQuerySystemTime( LARGE_INTEGER *time )
 {
-    struct timeval now;
+#ifdef HAVE_CLOCK_GETTIME
+    struct timespec ts;
+    static clockid_t clock_id = CLOCK_MONOTONIC; /* placeholder */
 
-    gettimeofday( &now, 0 );
-    Time->QuadPart = now.tv_sec * (ULONGLONG)TICKSPERSEC + TICKS_1601_TO_1970;
-    Time->QuadPart += now.tv_usec * 10;
+    if (clock_id == CLOCK_MONOTONIC)
+    {
+#ifdef CLOCK_REALTIME_COARSE
+        struct timespec res;
+
+        /* Use CLOCK_REALTIME_COARSE if it has 1 ms or better resolution */
+        if (!clock_getres( CLOCK_REALTIME_COARSE, &res ) && res.tv_sec == 0 && res.tv_nsec <= 1000000)
+            clock_id = CLOCK_REALTIME_COARSE;
+        else
+#endif /* CLOCK_REALTIME_COARSE */
+            clock_id = CLOCK_REALTIME;
+    }
+
+    if (!clock_gettime( clock_id, &ts ))
+    {
+        time->QuadPart = ts.tv_sec * (ULONGLONG)TICKSPERSEC + TICKS_1601_TO_1970;
+        time->QuadPart += (ts.tv_nsec + 50) / 100;
+    }
+    else
+#endif /* HAVE_CLOCK_GETTIME */
+    {
+        struct timeval now;
+
+        gettimeofday( &now, 0 );
+        time->QuadPart = now.tv_sec * (ULONGLONG)TICKSPERSEC + TICKS_1601_TO_1970;
+        time->QuadPart += now.tv_usec * 10;
+    }
     return STATUS_SUCCESS;
+}
+
+/***********************************************************************
+ *       RtlGetSystemTimePrecise [NTDLL.@]
+ *
+ * Get a more accurate current system time.
+ *
+ * RETURNS
+ *   The current system time.
+ */
+LONGLONG WINAPI RtlGetSystemTimePrecise( void )
+{
+    LONGLONG time;
+
+#ifdef HAVE_CLOCK_GETTIME
+    struct timespec ts;
+
+    if (!clock_gettime( CLOCK_REALTIME, &ts ))
+    {
+        time = ts.tv_sec * (ULONGLONG)TICKSPERSEC + TICKS_1601_TO_1970;
+        time += (ts.tv_nsec + 50) / 100;
+    }
+    else
+#endif
+    {
+        struct timeval now;
+
+        gettimeofday( &now, 0 );
+        time = now.tv_sec * (ULONGLONG)TICKSPERSEC + TICKS_1601_TO_1970;
+        time += now.tv_usec * 10;
+    }
+
+    return time;
 }
 
 /******************************************************************************
@@ -498,7 +557,7 @@ NTSTATUS WINAPI NtQueryPerformanceCounter( LARGE_INTEGER *counter, LARGE_INTEGER
  * NtGetTickCount   (NTDLL.@)
  * ZwGetTickCount   (NTDLL.@)
  */
-ULONG WINAPI NtGetTickCount(void)
+ULONGLONG WINAPI DECLSPEC_HOTPATCH get_tick_count64(void)
 {
     return monotonic_counter() / TICKSPERMSEC;
 }

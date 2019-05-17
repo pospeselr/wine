@@ -163,19 +163,16 @@ typedef struct BaseFilter
 	IReferenceClock * pClock;
 	FILTER_INFO filterInfo;
 	CLSID clsid;
-	LONG pinVersion;
+        LONG pin_version;
 
 	const struct BaseFilterFuncTable* pFuncsTable;
 } BaseFilter;
 
 typedef IPin* (WINAPI *BaseFilter_GetPin)(BaseFilter* iface, int iPosition);
-typedef LONG (WINAPI *BaseFilter_GetPinCount)(BaseFilter* iface);
-typedef LONG (WINAPI *BaseFilter_GetPinVersion)(BaseFilter* iface);
 
 typedef struct BaseFilterFuncTable {
 	/* Required */
 	BaseFilter_GetPin pfnGetPin;
-	BaseFilter_GetPinCount pfnGetPinCount;
 } BaseFilterFuncTable;
 
 HRESULT WINAPI BaseFilterImpl_QueryInterface(IBaseFilter * iface, REFIID riid, LPVOID * ppv);
@@ -191,10 +188,10 @@ HRESULT WINAPI BaseFilterImpl_QueryFilterInfo(IBaseFilter * iface, FILTER_INFO *
 HRESULT WINAPI BaseFilterImpl_JoinFilterGraph(IBaseFilter * iface, IFilterGraph *pGraph, LPCWSTR pName );
 HRESULT WINAPI BaseFilterImpl_QueryVendorInfo(IBaseFilter * iface, LPWSTR *pVendorInfo);
 
-LONG WINAPI BaseFilterImpl_GetPinVersion(BaseFilter* This);
 VOID WINAPI BaseFilterImpl_IncrementPinVersion(BaseFilter* This);
 
-HRESULT WINAPI BaseFilter_Init(BaseFilter * This, const IBaseFilterVtbl *Vtbl, const CLSID *pClsid, DWORD_PTR DebugInfo, const BaseFilterFuncTable* pBaseFuncsTable);
+void BaseFilter_Init(BaseFilter *filter, const IBaseFilterVtbl *vtbl,
+        const CLSID *clsid, DWORD_PTR debug_info, const BaseFilterFuncTable *func_table);
 HRESULT WINAPI BaseFilter_Destroy(BaseFilter * This);
 
 /* Enums */
@@ -248,14 +245,10 @@ typedef struct TransformFilterFuncTable {
 	TransformFilter_Notify pfnNotify;
 } TransformFilterFuncTable;
 
-HRESULT WINAPI TransformFilterImpl_QueryInterface(IBaseFilter * iface, REFIID riid, LPVOID * ppv);
-ULONG WINAPI TransformFilterImpl_Release(IBaseFilter * iface);
-HRESULT WINAPI TransformFilterImpl_Stop(IBaseFilter * iface);
-HRESULT WINAPI TransformFilterImpl_Pause(IBaseFilter * iface);
-HRESULT WINAPI TransformFilterImpl_Run(IBaseFilter * iface, REFERENCE_TIME tStart);
 HRESULT WINAPI TransformFilterImpl_Notify(TransformFilter *iface, IBaseFilter *sender, Quality qm);
 
-HRESULT TransformFilter_Construct( const IBaseFilterVtbl *filterVtbl, LONG filter_size, const CLSID* pClsid, const TransformFilterFuncTable* pFuncsTable, IBaseFilter ** ppTransformFilter);
+HRESULT strmbase_transform_create(LONG filter_size, const CLSID *clsid,
+        const TransformFilterFuncTable *func_table, IBaseFilter **filter);
 
 /* Source Seeking */
 typedef HRESULT (WINAPI *SourceSeeking_ChangeRate)(IMediaSeeking *iface);
@@ -615,7 +608,6 @@ typedef struct BaseRendererFuncTable {
 } BaseRendererFuncTable;
 
 HRESULT WINAPI BaseRendererImpl_QueryInterface(IBaseFilter * iface, REFIID riid, LPVOID * ppv);
-ULONG   WINAPI BaseRendererImpl_Release(IBaseFilter * iface);
 HRESULT WINAPI BaseRendererImpl_Receive(BaseRenderer *This, IMediaSample * pSample);
 HRESULT WINAPI BaseRendererImpl_Stop(IBaseFilter * iface);
 HRESULT WINAPI BaseRendererImpl_Run(IBaseFilter * iface, REFERENCE_TIME tStart);
@@ -630,6 +622,7 @@ HRESULT WINAPI BaseRendererImpl_ClearPendingSample(BaseRenderer *iface);
 HRESULT WINAPI strmbase_renderer_init(BaseRenderer *filter, const IBaseFilterVtbl *vtbl,
         IUnknown *outer, const CLSID *clsid, const WCHAR *sink_name, DWORD_PTR debug_info,
         const BaseRendererFuncTable *func_table);
+void strmbase_renderer_cleanup(BaseRenderer *filter);
 
 #ifdef __IBasicAudio_FWD_DEFINED__
 typedef struct tagBasicAudio

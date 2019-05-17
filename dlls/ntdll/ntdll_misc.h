@@ -28,6 +28,7 @@
 #include "winnt.h"
 #include "winternl.h"
 #include "wine/server.h"
+#include "wine/asm.h"
 
 #define MAX_NT_PATH_LENGTH 277
 
@@ -246,6 +247,13 @@ static inline struct ntdll_thread_data *ntdll_get_thread_data(void)
     return (struct ntdll_thread_data *)&NtCurrentTeb()->GdiTebBatch;
 }
 
+static inline int get_unix_exit_code( NTSTATUS status )
+{
+    /* prevent a nonzero exit code to end up truncated to zero in unix */
+    if (status && !(status & 0xff)) return 1;
+    return status;
+}
+
 extern mode_t FILE_umask DECLSPEC_HIDDEN;
 extern HANDLE keyed_event DECLSPEC_HIDDEN;
 extern SYSTEM_CPU_INFORMATION cpu_info DECLSPEC_HIDDEN;
@@ -260,4 +268,8 @@ void     WINAPI LdrInitializeThunk(CONTEXT*,void**,ULONG_PTR,ULONG_PTR);
 /* string functions */
 int __cdecl NTDLL_tolower( int c );
 int __cdecl _stricmp( LPCSTR str1, LPCSTR str2 );
+
+/* time functions */
+ULONGLONG WINAPI get_tick_count64( void );
+#define NtGetTickCount get_tick_count64
 #endif

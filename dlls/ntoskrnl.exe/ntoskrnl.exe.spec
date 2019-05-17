@@ -1,3 +1,4 @@
+@ stdcall -arch=arm,arm64,x86_64 ExAcquireFastMutex(ptr)
 @ stdcall -fastcall ExAcquireFastMutexUnsafe(ptr)
 @ stub ExAcquireRundownProtection
 @ stub ExAcquireRundownProtectionEx
@@ -8,6 +9,7 @@
 @ stdcall -fastcall -arch=i386 ExInterlockedPopEntrySList(ptr ptr) NTOSKRNL_ExInterlockedPopEntrySList
 @ stdcall -fastcall -arch=i386 ExInterlockedPushEntrySList (ptr ptr ptr) NTOSKRNL_ExInterlockedPushEntrySList
 @ stub ExReInitializeRundownProtection
+@ stdcall -arch=arm,arm64,x86_64 ExReleaseFastMutex(ptr)
 @ stdcall -fastcall ExReleaseFastMutexUnsafe(ptr)
 @ stdcall -fastcall ExReleaseResourceLite(ptr)
 @ stub ExReleaseRundownProtection
@@ -886,7 +888,7 @@
 @ stub PsGetProcessExitTime
 @ stdcall PsGetProcessId(ptr)
 @ stub PsGetProcessImageFileName
-@ stub PsGetProcessInheritedFromUniqueProcessId
+@ stdcall PsGetProcessInheritedFromUniqueProcessId(ptr)
 @ stub PsGetProcessJob
 @ stub PsGetProcessPeb
 @ stub PsGetProcessPriorityClass
@@ -1372,7 +1374,7 @@
 @ stdcall -private ZwQueryFullAttributesFile(ptr ptr) NtQueryFullAttributesFile
 @ stdcall -private ZwQueryInformationFile(long ptr ptr long long) NtQueryInformationFile
 @ stdcall -private ZwQueryInformationJobObject(long long ptr long ptr) NtQueryInformationJobObject
-@ stdcall -private ZwQueryInformationProcess(long long ptr long ptr) NtQueryInformationProcess
+@ stdcall ZwQueryInformationProcess(long long ptr long ptr) NtQueryInformationProcess
 @ stdcall -private ZwQueryInformationThread(long long ptr long ptr) NtQueryInformationThread
 @ stdcall -private ZwQueryInformationToken(long long ptr long ptr) NtQueryInformationToken
 @ stdcall -private ZwQueryInstallUILanguage(ptr) NtQueryInstallUILanguage
