@@ -1204,7 +1204,7 @@ void init_types(void)
   decl_builtin_basic("double", TYPE_BASIC_DOUBLE);
   decl_builtin_basic("error_status_t", TYPE_BASIC_ERROR_STATUS_T);
   decl_builtin_basic("handle_t", TYPE_BASIC_HANDLE);
-  decl_builtin_alias("boolean", type_new_basic(TYPE_BASIC_BYTE));
+  decl_builtin_alias("boolean", type_new_basic(TYPE_BASIC_CHAR));
 }
 
 static str_list_t *append_str(str_list_t *list, char *str)
@@ -2081,7 +2081,13 @@ static type_t *reg_typedefs(decl_spec_t *decl_spec, declarator_list_t *decls, at
       type_get_type_detect_alias(type) == TYPE_ENCAPSULATED_UNION)
   {
     if (!type->name)
+    {
       type->name = gen_name();
+      /* the generated name will be used and this typedef excluded from the
+       * built typelib unless the typedef has the 'public' attribute, so add it here */
+      if (do_typelib && !is_attr(attrs, ATTR_PUBLIC))
+        attrs = append_attr(attrs, make_attr(ATTR_PUBLIC));      
+    }
 
     /* replace existing attributes when generating a typelib */
     if (do_typelib)
