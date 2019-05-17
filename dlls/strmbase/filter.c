@@ -125,13 +125,13 @@ HRESULT WINAPI BaseFilterImpl_GetSyncSource(IBaseFilter * iface, IReferenceClock
     return S_OK;
 }
 
-HRESULT WINAPI BaseFilterImpl_EnumPins(IBaseFilter * iface, IEnumPins **ppEnum)
+HRESULT WINAPI BaseFilterImpl_EnumPins(IBaseFilter *iface, IEnumPins **enum_pins)
 {
-    BaseFilter *This = impl_from_IBaseFilter(iface);
+    BaseFilter *filter = impl_from_IBaseFilter(iface);
 
-    TRACE("(%p)->(%p)\n", iface, ppEnum);
+    TRACE("iface %p, enum_pins %p.\n", iface, enum_pins);
 
-    return EnumPins_Construct(This, This->pFuncsTable->pfnGetPin, This->pFuncsTable->pfnGetPinCount, BaseFilterImpl_GetPinVersion, ppEnum);
+    return enum_pins_create(filter, enum_pins);
 }
 
 HRESULT WINAPI BaseFilterImpl_FindPin(IBaseFilter *iface, const WCHAR *id, IPin **ret)
@@ -144,9 +144,8 @@ HRESULT WINAPI BaseFilterImpl_FindPin(IBaseFilter *iface, const WCHAR *id, IPin 
 
     TRACE("(%p)->(%s, %p)\n", This, debugstr_w(id), ret);
 
-    for (i = 0; i < This->pFuncsTable->pfnGetPinCount(This); ++i)
+    for (i = 0; (pin = This->pFuncsTable->pfnGetPin(This, i)); ++i)
     {
-        pin = This->pFuncsTable->pfnGetPin(This, i);
         hr = IPin_QueryPinInfo(pin, &info);
         if (FAILED(hr))
         {
@@ -206,19 +205,13 @@ HRESULT WINAPI BaseFilterImpl_QueryVendorInfo(IBaseFilter * iface, LPWSTR *pVend
     return E_NOTIMPL;
 }
 
-LONG WINAPI BaseFilterImpl_GetPinVersion(BaseFilter * This)
+VOID WINAPI BaseFilterImpl_IncrementPinVersion(BaseFilter *filter)
 {
-    TRACE("(%p)\n", This);
-    return This->pinVersion;
+    InterlockedIncrement(&filter->pin_version);
 }
 
-VOID WINAPI BaseFilterImpl_IncrementPinVersion(BaseFilter * This)
-{
-    InterlockedIncrement(&This->pinVersion);
-    TRACE("(%p) -> New pinVersion %i\n", This,This->pinVersion);
-}
-
-HRESULT WINAPI BaseFilter_Init(BaseFilter * This, const IBaseFilterVtbl *Vtbl, const CLSID *pClsid, DWORD_PTR DebugInfo, const BaseFilterFuncTable* pBaseFuncsTable)
+void BaseFilter_Init(BaseFilter *This, const IBaseFilterVtbl *Vtbl, const CLSID *pClsid,
+        DWORD_PTR DebugInfo, const BaseFilterFuncTable *pBaseFuncsTable)
 {
     This->IBaseFilter_iface.lpVtbl = Vtbl;
     This->refCount = 1;
@@ -229,11 +222,9 @@ HRESULT WINAPI BaseFilter_Init(BaseFilter * This, const IBaseFilterVtbl *Vtbl, c
     ZeroMemory(&This->filterInfo, sizeof(FILTER_INFO));
     This->clsid = *pClsid;
     This->csFilter.DebugInfo->Spare[0] = DebugInfo;
-    This->pinVersion = 1;
+    This->pin_version = 1;
 
     This->pFuncsTable = pBaseFuncsTable;
-
-    return S_OK;
 }
 
 HRESULT WINAPI BaseFilter_Destroy(BaseFilter * This)

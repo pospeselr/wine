@@ -28,6 +28,7 @@
 #include "dshow.h"
 #include "uuids.h"
 #include "wine/debug.h"
+#include "wine/heap.h"
 #include "wine/list.h"
 #include "wine/strmbase.h"
 #include "wine/unicode.h"
@@ -63,9 +64,7 @@ void QualityControlRender_DoQOS(QualityControlImpl *priv);
 void QualityControlRender_BeginRender(QualityControlImpl *This);
 void QualityControlRender_EndRender(QualityControlImpl *This);
 
-HRESULT WINAPI EnumPins_Construct(BaseFilter *base, BaseFilter_GetPin pfn_get_pin,
-        BaseFilter_GetPinCount pfn_get_pin_count, BaseFilter_GetPinVersion pfn_get_pin_version,
-        IEnumPins **enum_pins);
+HRESULT enum_pins_create(BaseFilter *base, IEnumPins **enum_pins);
 
 HRESULT WINAPI RendererPosPassThru_RegisterMediaTime(IUnknown *iface, REFERENCE_TIME start);
 HRESULT WINAPI RendererPosPassThru_ResetMediaTime(IUnknown *iface);
