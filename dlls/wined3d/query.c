@@ -189,15 +189,15 @@ static enum wined3d_fence_result wined3d_fence_test(const struct wined3d_fence *
 
     TRACE("fence %p, device %p, flags %#x.\n", fence, device, flags);
 
-    if (!fence->context)
+    if (!fence->context_gl)
     {
         TRACE("Fence not issued.\n");
         return WINED3D_FENCE_NOT_STARTED;
     }
 
-    if (!(context = context_reacquire(device, fence->context)))
+    if (!(context = context_reacquire(device, &fence->context_gl->c)))
     {
-        if (!fence->context->gl_info->supported[ARB_SYNC])
+        if (!fence->context_gl->c.gl_info->supported[ARB_SYNC])
         {
             WARN("Fence tested from wrong thread.\n");
             return WINED3D_FENCE_WRONG_THREAD;
@@ -266,14 +266,14 @@ enum wined3d_fence_result wined3d_fence_wait(const struct wined3d_fence *fence,
 
     TRACE("fence %p, device %p.\n", fence, device);
 
-    if (!fence->context)
+    if (!fence->context_gl)
     {
         TRACE("Fence not issued.\n");
         return WINED3D_FENCE_NOT_STARTED;
     }
-    gl_info = fence->context->gl_info;
+    gl_info = fence->context_gl->c.gl_info;
 
-    if (!(context = context_reacquire(device, fence->context)))
+    if (!(context = context_reacquire(device, &fence->context_gl->c)))
     {
         /* A glFinish does not reliably wait for draws in other contexts. The caller has
          * to find its own way to cope with the thread switch
@@ -337,14 +337,14 @@ void wined3d_fence_issue(struct wined3d_fence *fence, const struct wined3d_devic
     struct wined3d_context *context = NULL;
     const struct wined3d_gl_info *gl_info;
 
-    if (fence->context && !(context = context_reacquire(device, fence->context))
-            && !fence->context->gl_info->supported[ARB_SYNC])
-        context_free_fence(fence);
+    if (fence->context_gl && !(context = context_reacquire(device, &fence->context_gl->c))
+            && !fence->context_gl->c.gl_info->supported[ARB_SYNC])
+        wined3d_context_gl_free_fence(fence);
     if (!context)
         context = context_acquire(device, NULL, 0);
     gl_info = context->gl_info;
-    if (!fence->context)
-        context_alloc_fence(context, fence);
+    if (!fence->context_gl)
+        wined3d_context_gl_alloc_fence(wined3d_context_gl(context), fence);
 
     if (gl_info->supported[ARB_SYNC])
     {
@@ -370,8 +370,8 @@ void wined3d_fence_issue(struct wined3d_fence *fence, const struct wined3d_devic
 
 static void wined3d_fence_free(struct wined3d_fence *fence)
 {
-    if (fence->context)
-        context_free_fence(fence);
+    if (fence->context_gl)
+        wined3d_context_gl_free_fence(fence);
 }
 
 void wined3d_fence_destroy(struct wined3d_fence *fence)
@@ -710,7 +710,7 @@ static BOOL wined3d_timestamp_query_ops_poll(struct wined3d_query *query, DWORD 
 
     TRACE("query %p, flags %#x.\n", query, flags);
 
-    if (!(context = context_reacquire(device, tq->context)))
+    if (!(context = context_reacquire(device, &tq->context_gl->c)))
     {
         FIXME("%p Wrong thread, returning 1.\n", query);
         tq->timestamp = 1;
@@ -749,11 +749,11 @@ static BOOL wined3d_timestamp_query_ops_issue(struct wined3d_query *query, DWORD
     }
     if (flags & WINED3DISSUE_END)
     {
-        if (tq->context)
-            context_free_timestamp_query(tq);
+        if (tq->context_gl)
+            wined3d_context_gl_free_timestamp_query(tq);
         context = context_acquire(query->device, NULL, 0);
         gl_info = context->gl_info;
-        context_alloc_timestamp_query(context, tq);
+        wined3d_context_gl_alloc_timestamp_query(wined3d_context_gl(context), tq);
         GL_EXTCALL(glQueryCounter(tq->id, GL_TIMESTAMP));
         checkGLcall("glQueryCounter()");
         context_release(context);
@@ -788,7 +788,7 @@ static BOOL wined3d_so_statistics_query_ops_poll(struct wined3d_query *query, DW
 
     TRACE("query %p, flags %#x.\n", query, flags);
 
-    if (!(context = context_reacquire(device, pq->context)))
+    if (!(context = context_reacquire(device, &pq->context_gl->c)))
     {
         FIXME("%p Wrong thread, returning 0 primitives.\n", query);
         memset(&pq->statistics, 0, sizeof(pq->statistics));
@@ -849,24 +849,24 @@ static BOOL wined3d_so_statistics_query_ops_issue(struct wined3d_query *query, D
     {
         if (pq->started)
         {
-            if ((context = context_reacquire(device, pq->context)))
+            if ((context = context_reacquire(device, &pq->context_gl->c)))
             {
                 wined3d_so_statistics_query_end(pq, context);
             }
             else
             {
                 FIXME("Wrong thread, can't restart query.\n");
-                context_free_so_statistics_query(pq);
+                wined3d_context_gl_free_so_statistics_query(pq);
                 context = context_acquire(device, NULL, 0);
-                context_alloc_so_statistics_query(context, pq);
+                wined3d_context_gl_alloc_so_statistics_query(wined3d_context_gl(context), pq);
             }
         }
         else
         {
-            if (pq->context)
-                context_free_so_statistics_query(pq);
+            if (pq->context_gl)
+                wined3d_context_gl_free_so_statistics_query(pq);
             context = context_acquire(device, NULL, 0);
-            context_alloc_so_statistics_query(context, pq);
+            wined3d_context_gl_alloc_so_statistics_query(wined3d_context_gl(context), pq);
         }
         gl_info = context->gl_info;
 
@@ -893,7 +893,7 @@ static BOOL wined3d_so_statistics_query_ops_issue(struct wined3d_query *query, D
     {
         if (pq->started)
         {
-            if ((context = context_reacquire(device, pq->context)))
+            if ((context = context_reacquire(device, &pq->context_gl->c)))
             {
                 wined3d_so_statistics_query_end(pq, context);
 
@@ -922,7 +922,7 @@ static BOOL wined3d_pipeline_query_ops_poll(struct wined3d_query *query, DWORD f
 
     TRACE("query %p, flags %#x.\n", query, flags);
 
-    if (!(context = context_reacquire(device, pq->context)))
+    if (!(context = context_reacquire(device, &pq->context_gl->c)))
     {
         FIXME("%p Wrong thread.\n", query);
         memset(&pq->statistics, 0, sizeof(pq->statistics));
@@ -990,24 +990,24 @@ static BOOL wined3d_pipeline_query_ops_issue(struct wined3d_query *query, DWORD 
     {
         if (pq->started)
         {
-            if ((context = context_reacquire(device, pq->context)))
+            if ((context = context_reacquire(device, &pq->context_gl->c)))
             {
                 wined3d_pipeline_statistics_query_end(pq, context);
             }
             else
             {
                 FIXME("Wrong thread, can't restart query.\n");
-                context_free_pipeline_statistics_query(pq);
+                wined3d_context_gl_free_pipeline_statistics_query(pq);
                 context = context_acquire(device, NULL, 0);
-                context_alloc_pipeline_statistics_query(context, pq);
+                wined3d_context_gl_alloc_pipeline_statistics_query(wined3d_context_gl(context), pq);
             }
         }
         else
         {
-            if (pq->context)
-                context_free_pipeline_statistics_query(pq);
+            if (pq->context_gl)
+                wined3d_context_gl_free_pipeline_statistics_query(pq);
             context = context_acquire(device, NULL, 0);
-            context_alloc_pipeline_statistics_query(context, pq);
+            wined3d_context_gl_alloc_pipeline_statistics_query(wined3d_context_gl(context), pq);
         }
         gl_info = context->gl_info;
 
@@ -1031,7 +1031,7 @@ static BOOL wined3d_pipeline_query_ops_issue(struct wined3d_query *query, DWORD 
     {
         if (pq->started)
         {
-            if ((context = context_reacquire(device, pq->context)))
+            if ((context = context_reacquire(device, &pq->context_gl->c)))
             {
                 wined3d_pipeline_statistics_query_end(pq, context);
                 context_release(context);
@@ -1141,8 +1141,8 @@ static void wined3d_timestamp_query_ops_destroy(struct wined3d_query *query)
 {
     struct wined3d_timestamp_query *tq = wined3d_timestamp_query_from_query(query);
 
-    if (tq->context)
-        context_free_timestamp_query(tq);
+    if (tq->context_gl)
+        wined3d_context_gl_free_timestamp_query(tq);
     heap_free(tq);
 }
 
@@ -1237,8 +1237,8 @@ static void wined3d_so_statistics_query_ops_destroy(struct wined3d_query *query)
 {
     struct wined3d_so_statistics_query *pq = wined3d_so_statistics_query_from_query(query);
 
-    if (pq->context)
-        context_free_so_statistics_query(pq);
+    if (pq->context_gl)
+        wined3d_context_gl_free_so_statistics_query(pq);
     heap_free(pq);
 }
 
@@ -1294,8 +1294,8 @@ static HRESULT wined3d_so_statistics_query_create(struct wined3d_device *device,
 static void wined3d_pipeline_query_ops_destroy(struct wined3d_query *query)
 {
     struct wined3d_pipeline_statistics_query *pq = wined3d_pipeline_statistics_query_from_query(query);
-    if (pq->context)
-        context_free_pipeline_statistics_query(pq);
+    if (pq->context_gl)
+        wined3d_context_gl_free_pipeline_statistics_query(pq);
     heap_free(pq);
 }
 

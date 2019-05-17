@@ -16,27 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#undef __thiscall
-#ifdef __i386__  /* thiscall functions are i386-specific */
-
-#define THISCALL(func) __thiscall_ ## func
-#define THISCALL_NAME(func) __ASM_NAME("__thiscall_" #func)
-#define __thiscall __stdcall
-#define DEFINE_THISCALL_WRAPPER(func,args) \
-    extern void THISCALL(func)(void); \
-    __ASM_GLOBAL_FUNC(__thiscall_ ## func, \
-                      "popl %eax\n\t" \
-                      "pushl %ecx\n\t" \
-                      "pushl %eax\n\t" \
-                      "jmp " __ASM_NAME(#func) __ASM_STDCALL(args) )
-#else /* __i386__ */
-
-#define THISCALL(func) func
-#define THISCALL_NAME(func) __ASM_NAME(#func)
-#define __thiscall __cdecl
-#define DEFINE_THISCALL_WRAPPER(func,args) /* nothing */
-
-#endif /* __i386__ */
+#include "wine/asm.h"
 
 #ifdef _WIN64
 
@@ -260,7 +240,7 @@ typedef struct
 
 #endif
 
-#ifdef __i386__
+#if defined(__i386__) && !defined(__MINGW32__)
 
 #define CALL_VTBL_FUNC(this, off, ret, type, args) ((ret (WINAPI*)type)&vtbl_wrapper_##off)args
 
@@ -280,7 +260,7 @@ extern void *vtbl_wrapper_48;
 
 #else
 
-#define CALL_VTBL_FUNC(this, off, ret, type, args) ((ret (__cdecl***)type)this)[0][off/4]args
+#define CALL_VTBL_FUNC(this, off, ret, type, args) ((ret (__thiscall***)type)this)[0][off/4]args
 
 #endif
 

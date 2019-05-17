@@ -50,18 +50,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
 
-#ifdef __i386__
-#define DEFINE_FASTCALL_WRAPPER(func,args) \
-    __ASM_STDCALL_FUNC( __fastcall_ ## func, args, \
-                       "popl %eax\n\t" \
-                       "pushl %edx\n\t" \
-                       "pushl %ecx\n\t" \
-                       "pushl %eax\n\t" \
-                       "jmp " __ASM_NAME(#func) __ASM_STDCALL(args) )
-#else
-#define DEFINE_FASTCALL_WRAPPER(func,args) /* nothing */
-#endif
-
 /* CRC polynomial 0xedb88320 */
 static const DWORD CRC_table[256] =
 {
@@ -1259,8 +1247,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushListSListEx(PSLIST_HEADER list, PSLIST_ENT
  * RtlInterlockedPushListSList   [NTDLL.@]
  */
 DEFINE_FASTCALL_WRAPPER(RtlInterlockedPushListSList, 16)
-PSLIST_ENTRY WINAPI RtlInterlockedPushListSList(PSLIST_HEADER list, PSLIST_ENTRY first,
-                                                PSLIST_ENTRY last, ULONG count)
+PSLIST_ENTRY FASTCALL RtlInterlockedPushListSList(PSLIST_HEADER list, PSLIST_ENTRY first,
+                                                  PSLIST_ENTRY last, ULONG count)
 {
     return RtlInterlockedPushListSListEx(list, first, last, count);
 }

@@ -3343,6 +3343,7 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter,
         {ARB_BUFFER_STORAGE,               MAKEDWORD_VERSION(4, 4)},
         {ARB_CLEAR_TEXTURE,                MAKEDWORD_VERSION(4, 4)},
         {ARB_QUERY_BUFFER_OBJECT,          MAKEDWORD_VERSION(4, 4)},
+        {ARB_TEXTURE_MIRROR_CLAMP_TO_EDGE, MAKEDWORD_VERSION(4, 4)},
 
         {ARB_CLIP_CONTROL,                 MAKEDWORD_VERSION(4, 5)},
         {ARB_CULL_DISTANCE,                MAKEDWORD_VERSION(4, 5)},
@@ -4344,11 +4345,13 @@ static void adapter_gl_get_wined3d_caps(const struct wined3d_adapter *adapter, s
     if (gl_info->supported[ARB_FRAMEBUFFER_SRGB])
         caps->PrimitiveMiscCaps |= WINED3DPMISCCAPS_POSTBLENDSRGBCONVERT;
 
+    if (gl_info->supported[ARB_SAMPLER_OBJECTS] || gl_info->supported[EXT_TEXTURE_LOD_BIAS])
+        caps->RasterCaps |= WINED3DPRASTERCAPS_MIPMAPLODBIAS;
+
     if (gl_info->supported[ARB_TEXTURE_FILTER_ANISOTROPIC])
     {
         caps->RasterCaps |= WINED3DPRASTERCAPS_ANISOTROPY
-                | WINED3DPRASTERCAPS_ZBIAS
-                | WINED3DPRASTERCAPS_MIPMAPLODBIAS;
+                | WINED3DPRASTERCAPS_ZBIAS;
 
         caps->TextureFilterCaps |= WINED3DPTFILTERCAPS_MAGFANISOTROPIC
                 | WINED3DPTFILTERCAPS_MINFANISOTROPIC;

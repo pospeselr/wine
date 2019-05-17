@@ -16,8 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-
 #include <stdarg.h>
 
 #include "msvcp90.h"
@@ -28,7 +26,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(msvcp);
 
-#ifdef __i386__
+#if defined(__i386__) && !defined(__MINGW32__)
 
 #define DEFINE_VTBL_WRAPPER(off)            \
     __ASM_GLOBAL_FUNC(vtbl_wrapper_ ## off, \

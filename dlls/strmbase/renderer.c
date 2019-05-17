@@ -194,11 +194,6 @@ static IPin* WINAPI BaseRenderer_GetPin(BaseFilter *iface, int pos)
     return &This->pInputPin->pin.IPin_iface;
 }
 
-static LONG WINAPI BaseRenderer_GetPinCount(BaseFilter *iface)
-{
-    return 1;
-}
-
 static HRESULT WINAPI BaseRenderer_Input_CheckMediaType(BasePin *pin, const AM_MEDIA_TYPE * pmt)
 {
     BaseRenderer *This = impl_from_IBaseFilter(pin->pinInfo.pFilter);
@@ -213,7 +208,6 @@ static HRESULT WINAPI BaseRenderer_Receive(BaseInputPin *pin, IMediaSample * pSa
 
 static const BaseFilterFuncTable RendererBaseFilterFuncTable = {
     BaseRenderer_GetPin,
-    BaseRenderer_GetPinCount
 };
 
 static const BaseInputPinFuncTable input_BaseInputFuncTable = {
@@ -281,37 +275,30 @@ HRESULT WINAPI BaseRendererImpl_QueryInterface(IBaseFilter* iface, REFIID riid, 
         return BaseFilterImpl_QueryInterface(iface, riid, ppv);
 }
 
-ULONG WINAPI BaseRendererImpl_Release(IBaseFilter* iface)
+void strmbase_renderer_cleanup(BaseRenderer *filter)
 {
-    BaseRenderer *This = impl_from_IBaseFilter(iface);
-    ULONG refCount = InterlockedDecrement(&This->filter.refCount);
+    IPin *peer;
 
-    if (!refCount)
+    if (SUCCEEDED(IPin_ConnectedTo(&filter->pInputPin->pin.IPin_iface, &peer)))
     {
-        IPin *pConnectedTo;
-
-        if (SUCCEEDED(IPin_ConnectedTo(&This->pInputPin->pin.IPin_iface, &pConnectedTo)))
-        {
-            IPin_Disconnect(pConnectedTo);
-            IPin_Release(pConnectedTo);
-        }
-        IPin_Disconnect(&This->pInputPin->pin.IPin_iface);
-        IPin_Release(&This->pInputPin->pin.IPin_iface);
-
-        if (This->pPosition)
-            IUnknown_Release(This->pPosition);
-
-        This->csRenderLock.DebugInfo->Spare[0] = 0;
-        DeleteCriticalSection(&This->csRenderLock);
-
-        BaseRendererImpl_ClearPendingSample(This);
-        CloseHandle(This->evComplete);
-        CloseHandle(This->ThreadSignal);
-        CloseHandle(This->RenderEvent);
-        QualityControlImpl_Destroy(This->qcimpl);
-        BaseFilter_Destroy(&This->filter);
+        IPin_Disconnect(peer);
+        IPin_Release(peer);
     }
-    return refCount;
+    IPin_Disconnect(&filter->pInputPin->pin.IPin_iface);
+    IPin_Release(&filter->pInputPin->pin.IPin_iface);
+
+    if (filter->pPosition)
+        IUnknown_Release(filter->pPosition);
+
+    filter->csRenderLock.DebugInfo->Spare[0] = 0;
+    DeleteCriticalSection(&filter->csRenderLock);
+
+    BaseRendererImpl_ClearPendingSample(filter);
+    CloseHandle(filter->evComplete);
+    CloseHandle(filter->ThreadSignal);
+    CloseHandle(filter->RenderEvent);
+    QualityControlImpl_Destroy(filter->qcimpl);
+    BaseFilter_Destroy(&filter->filter);
 }
 
 HRESULT WINAPI BaseRendererImpl_Receive(BaseRenderer *This, IMediaSample * pSample)
