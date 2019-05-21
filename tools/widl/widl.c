@@ -733,9 +733,7 @@ int main(int argc,char *argv[])
     }
   }
 
-#ifdef DEFAULT_INCLUDE_DIR
-  wpp_add_include_path(DEFAULT_INCLUDE_DIR);
-#endif
+  wpp_add_include_path("/home/pospeselr/Code/Tor/dist/mingw-w64/i686-w64-mingw32/include");
 
   switch (target_cpu)
   {
