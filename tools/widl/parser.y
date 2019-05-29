@@ -1720,7 +1720,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *declspec, const decla
         else
           *ptype = type_new_array((*ptype)->name,
                                   type_array_get_element(*ptype), FALSE,
-                                  0, dim, NULL, 0);
+                                  0, dim, NULL, FC_RP);
       }
       else if (is_ptr(*ptype))
       {
