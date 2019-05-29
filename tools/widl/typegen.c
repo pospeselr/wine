@@ -1072,11 +1072,11 @@ static unsigned char get_parameter_fc( const var_t *var, int is_return, unsigned
             case TGT_UNION:
             case TGT_USER_TYPE:
             case TGT_RANGE:
-            case TGT_ARRAY:
                 *flags |= IsSimpleRef | MustFree;
                 *typestring_offset = ref->typestring_offset;
                 if (!is_in && is_out) server_size = type_memsize( ref );
                 break;
+            case TGT_ARRAY:
             case TGT_STRING:
             case TGT_POINTER:
             case TGT_CTXT_HANDLE:
@@ -1182,8 +1182,10 @@ static unsigned int write_new_procformatstring_type(FILE *file, int indent, cons
         print_file( file, indent, "0x0,\n" );
     }
     else
-        print_file( file, indent, "NdrFcShort(0x%x),	/* type offset = %u */\n",
+    {
+        print_file( file, indent, "NdrFcShort(0x%x),	/* FOO type offset = %u */\n",
                     typestring_offset, typestring_offset );
+    }
     *stack_offset += max( stack_size, pointer_size );
     return 6;
 }
@@ -2131,6 +2133,7 @@ static unsigned int write_nonsimple_pointer(FILE *file, const attr_list_t *attrs
             {
             case TGT_STRING:
             case TGT_POINTER:
+            case TGT_ARRAY:
             case TGT_CTXT_HANDLE:
             case TGT_CTXT_HANDLE_POINTER:
                 flags |= FC_ALLOCED_ON_STACK;
