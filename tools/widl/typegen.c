@@ -1074,7 +1074,7 @@ static unsigned char get_parameter_fc( const var_t *var, int is_return, unsigned
             case TGT_RANGE:
             case TGT_ARRAY:
                 *flags |= MustFree;
-                if (!type_array_is_decl_as_ptr(ref))
+                if (type_get_type(ref) != TYPE_ARRAY || !type_array_is_decl_as_ptr(ref))
                 {
                     *flags |= IsSimpleRef;
                     *typestring_offset = ref->typestring_offset;
