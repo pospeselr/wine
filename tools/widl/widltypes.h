@@ -441,7 +441,7 @@ struct _type_t {
     struct bitfield_details bitfield;
   } details;
   const char *c_name;
-  type_t *orig;                   /* dup'd types */
+  decl_spec_t orig;                   /* dup'd types */
   unsigned int typestring_offset;
   unsigned int ptrdesc;           /* used for complex structs */
   int typelib_idx;
