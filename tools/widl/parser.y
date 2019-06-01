@@ -1423,6 +1423,7 @@ void clear_all_offsets(void)
 
 static void type_function_add_head_arg(type_t *type, var_t *arg)
 {
+    assert(type_get_type_detect_alias(type) == TYPE_FUNCTION);
     if (!type->details.function->args)
     {
         type->details.function->args = xmalloc( sizeof(*type->details.function->args) );
@@ -1482,6 +1483,7 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
     for (chain_type = chain; get_array_or_ptr_ref(chain_type); chain_type = get_array_or_ptr_ref(chain_type))
         ;
 
+    assert(!type_is_alias(chain_type));
     if (is_ptr(chain_type))
         chain_type->details.pointer.ref.type = type;
     else if (is_array(chain_type))
@@ -1550,7 +1552,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
     {
       ptr_attr = get_attrv(ptr->attrs, ATTR_POINTERTYPE);
       if (!ptr_attr && type_is_alias(ptr))
-        ptr = type_alias_get_aliasee(ptr);
+        ptr = type_alias_get_aliasee_type(ptr);
       else
         break;
     }
@@ -1561,7 +1563,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
           warning_loc_info(&v->loc_info,
                            "%s: pointer attribute applied to interface "
                            "pointer type has no effect\n", v->name);
-      if (!ptr_attr && top && (*pt)->details.pointer.def_fc != FC_RP)
+      if (!ptr_attr && top && type_pointer_get_default_fc(*pt) != FC_RP)
       {
         /* FIXME: this is a horrible hack to cope with the issue that we
          * store an offset to the typeformat string in the type object, but
@@ -1634,6 +1636,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
         error_loc("%s: size_is attribute applied to illegal type\n", v->name);
     }
 
+    assert(!type_is_alias(*ptype));
     if (is_ptr(*ptype))
       ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
@@ -1660,6 +1663,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
         error_loc("%s: length_is attribute applied to illegal type\n", v->name);
     }
 
+    assert(!type_is_alias(*ptype));
     if (is_ptr(*ptype))
       ptype = &(*ptype)->details.pointer.ref.type;
     else if (is_array(*ptype))
@@ -1902,7 +1906,8 @@ type_t *reg_type(type_t *type, const char *name, struct namespace *namespace, in
 static int is_incomplete(const type_t *t)
 {
   return !t->defined &&
-    (type_get_type_detect_alias(t) == TYPE_STRUCT ||
+    (type_get_type_detect_alias(t) == TYPE_ENUM ||
+     type_get_type_detect_alias(t) == TYPE_STRUCT ||
      type_get_type_detect_alias(t) == TYPE_UNION ||
      type_get_type_detect_alias(t) == TYPE_ENCAPSULATED_UNION);
 }
@@ -1910,19 +1915,16 @@ static int is_incomplete(const type_t *t)
 void add_incomplete(type_t *t)
 {
   struct typenode *tn = xmalloc(sizeof *tn);
+  assert(is_incomplete(t));
   tn->type = t;
   list_add_tail(&incomplete_types, &tn->entry);
 }
 
 static void fix_type(type_t *t)
 {
-  if (type_is_alias(t) && is_incomplete(t)) {
-    type_t *ot = type_alias_get_aliasee(t);
-    fix_type(ot);
-    if (type_get_type_detect_alias(ot) == TYPE_STRUCT ||
-        type_get_type_detect_alias(ot) == TYPE_UNION ||
-        type_get_type_detect_alias(ot) == TYPE_ENCAPSULATED_UNION)
-      t->details.structure = ot->details.structure;
+  if (type_is_alias(t) && is_incomplete(t)) 
+  {
+    type_t *ot = type_alias_get_aliasee_type(t);
     t->defined = ot->defined;
   }
 }
@@ -1946,7 +1948,7 @@ static void fix_incomplete_types(type_t *complete_type)
   {
     if (type_is_equal(complete_type, tn->type))
     {
-      tn->type->details.structure = complete_type->details.structure;
+      tn->type->details = complete_type->details;
       list_remove(&tn->entry);
       free(tn);
     }
@@ -2651,10 +2653,15 @@ static void check_field_common(const type_t *container_type,
             type = type_array_get_element_type(type);
             more_to_do = TRUE;
             break;
+        case TGT_ENUM:
+            type = type_get_real_type(type);
+            if(!type_is_complete(type))
+            {
+                error_loc_info(&arg->loc_info, "undefined type declaration enum %s\n", type->name);
+            }
         case TGT_USER_TYPE:
         case TGT_IFACE_POINTER:
         case TGT_BASIC:
-        case TGT_ENUM:
         case TGT_RANGE:
             /* nothing to do */
             break;
@@ -2679,10 +2686,15 @@ static void check_remoting_fields(const var_t *var, type_t *type)
         if (type_is_complete(type))
             fields = type_struct_get_fields(type);
         else
-            error_loc_info(&var->loc_info, "undefined type declaration %s\n", type->name);
+            error_loc_info(&var->loc_info, "undefined type declaration struct %s\n", type->name);
     }
     else if (type_get_type(type) == TYPE_UNION || type_get_type(type) == TYPE_ENCAPSULATED_UNION)
-        fields = type_union_get_cases(type);
+    {
+    	if (type_is_complete(type))
+            fields = type_union_get_cases(type);
+        else
+            error_loc_info(&var->loc_info, "undefined type declaration union %s\n", type->name);
+    }
 
     if (fields) LIST_FOR_EACH_ENTRY( field, fields, const var_t, entry )
         if (field->declspec.type) check_field_common(type, type->name, field);
@@ -2694,6 +2706,7 @@ static void check_remoting_args(const var_t *func)
     const char *funcname = func->name;
     const var_t *arg;
 
+    assert(type_get_type_detect_alias(func->declspec.type) == TYPE_FUNCTION);
     if (func->declspec.type->details.function->args) LIST_FOR_EACH_ENTRY( arg, func->declspec.type->details.function->args, const var_t, entry )
     {
         const type_t *type = arg->declspec.type;
@@ -2828,6 +2841,7 @@ static void check_async_uuid(type_t *iface)
     type_t *async_iface;
     type_t *inherit;
 
+    assert(type_get_type_detect_alias(iface) == TYPE_INTERFACE);
     if (!is_attr(iface->attrs, ATTR_ASYNCUUID)) return;
 
     inherit = iface->details.iface->inherit;
@@ -2844,6 +2858,7 @@ static void check_async_uuid(type_t *iface)
         var_t *begin_func, *finish_func, *func = stmt->u.var, *arg;
         var_list_t *begin_args = NULL, *finish_args = NULL, *args;
 
+        assert(type_get_type_detect_alias(func->declspec.type) == TYPE_FUNCTION);
         args = func->declspec.type->details.function->args;
         if (args) LIST_FOR_EACH_ENTRY(arg, args, var_t, entry)
         {
@@ -2914,6 +2929,7 @@ static void check_all_user_types(const statement_list_t *stmts)
       const statement_t *stmt_func;
       STATEMENTS_FOR_EACH_FUNC(stmt_func, type_iface_get_stmts(stmt->u.type)) {
         const var_t *func = stmt_func->u.var;
+        assert(type_get_type_detect_alias(func->declspec.type) == TYPE_FUNCTION);
         if (func->declspec.type->details.function->args)
           LIST_FOR_EACH_ENTRY( v, func->declspec.type->details.function->args, const var_t, entry )
             check_for_additional_prototype_types(v->declspec.type);

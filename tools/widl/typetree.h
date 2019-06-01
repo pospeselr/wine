@@ -56,11 +56,35 @@ const char *type_get_name(const type_t *type, enum name_type name_type);
 /* FIXME: shouldn't need to export this */
 type_t *duptype(type_t *t, int dupname);
 
+#define STATEMENTS_FOR_EACH_FUNC(stmt, stmts) \
+  if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry ) \
+    if (stmt->type == STMT_DECLARATION && stmt->u.var->declspec.stgclass == STG_NONE && \
+        type_get_type_detect_alias(stmt->u.var->declspec.type) == TYPE_FUNCTION)
+
+static inline enum type_type type_get_type_detect_alias(const type_t *type)
+{
+    if (type->is_alias)
+        return TYPE_ALIAS;
+    return type->type_type;
+}
+
+static inline int statements_has_func(const statement_list_t *stmts)
+{
+  const statement_t *stmt;
+  int has_func = 0;
+  STATEMENTS_FOR_EACH_FUNC(stmt, stmts)
+  {
+    has_func = 1;
+    break;
+  }
+  return has_func;
+}
+
 /* un-alias the type until finding the non-alias type */
 static inline type_t *type_get_real_type(const type_t *type)
 {
     if (type->is_alias)
-        return type_get_real_type(type->orig);
+        return type_get_real_type(type->details.alias.aliasee.type);
     else
         return (type_t *)type;
 }
@@ -281,10 +305,15 @@ static inline int type_is_alias(const type_t *type)
     return type->is_alias;
 }
 
-static inline type_t *type_alias_get_aliasee(const type_t *type)
+static inline const decl_spec_t *type_alias_get_aliasee(const type_t *type)
 {
     assert(type_is_alias(type));
-    return type->orig;
+    return &type->details.alias.aliasee;
+}
+
+static inline type_t *type_alias_get_aliasee_type(const type_t *type)
+{
+    return type_alias_get_aliasee(type)->type;
 }
 
 static inline ifref_list_t *type_coclass_get_ifaces(const type_t *type)
@@ -325,6 +354,24 @@ static inline const expr_t *type_bitfield_get_bits(const type_t *type)
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_BITFIELD);
     return type->details.bitfield.bits;
+}
+
+/* gets pointer to details_t union with the assumption the caller wants to write to it
+ * so assert if we're actually dealing with an alias and writing to the details would
+ * overwrite the alias_details
+ */
+static inline details_t *type_get_details(type_t* type)
+{
+    assert(!type_is_alias(type));
+    return &type->details;
+}
+
+/* const overload of type_get_details */
+
+static inline const details_t *type_get_const_details(const type_t* type)
+{
+    assert(!type_is_alias(type));
+    return &type->details;
 }
 
 #endif /* WIDL_TYPE_TREE_H */

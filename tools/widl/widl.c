@@ -494,6 +494,7 @@ static void write_id_data_stmts(const statement_list_t *stmts)
         uuid = get_attrp(type->attrs, ATTR_UUID);
         write_id_guid(idfile, "IID", is_attr(type->attrs, ATTR_DISPINTERFACE) ? "DIID" : "IID",
                    type->name, uuid);
+        assert(type_get_type_detect_alias(type) == TYPE_INTERFACE);
         if (type->details.iface->async_iface)
         {
           uuid = get_attrp(type->details.iface->async_iface->attrs, ATTR_UUID);
