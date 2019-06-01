@@ -423,7 +423,7 @@ void write_type_left(FILE *h, type_t *t, enum name_type name_type, int declonly)
         fprintf(h, "void");
         break;
       case TYPE_BITFIELD:
-        write_type_left(h, type_bitfield_get_field(t), name_type, declonly);
+        write_type_left(h, type_bitfield_get_field_type(t), name_type, declonly);
         break;
       case TYPE_ALIAS:
       case TYPE_FUNCTION:

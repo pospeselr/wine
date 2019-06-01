@@ -313,11 +313,16 @@ static inline unsigned char type_pointer_get_default_fc(const type_t *type)
     return type->details.pointer.def_fc;
 }
 
-static inline type_t *type_bitfield_get_field(const type_t *type)
+static inline const decl_spec_t *type_bitfield_get_field(const type_t *type)
 {
     type = type_get_real_type(type);
     assert(type_get_type(type) == TYPE_BITFIELD);
-    return type->details.bitfield.field;
+    return &type->details.bitfield.field;
+}
+
+static inline type_t *type_bitfield_get_field_type(const type_t *type)
+{
+    return type_bitfield_get_field(type)->type;
 }
 
 static inline const expr_t *type_bitfield_get_bits(const type_t *type)

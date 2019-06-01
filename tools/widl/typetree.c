@@ -408,7 +408,7 @@ type_t *type_new_bitfield(type_t *field, const expr_t *bits)
     /* FIXME: validate bits->cval <= memsize(field) * 8 */
 
     t = make_type(TYPE_BITFIELD);
-    t->details.bitfield.field = field;
+    t->details.bitfield.field.type = field;
     t->details.bitfield.bits = bits;
     return t;
 }
