@@ -49,7 +49,6 @@ type_t *make_type(enum type_type type)
     t->type_type = type;
     t->attrs = NULL;
     t->c_name = NULL;
-    t->orig = NULL;
     memset(&t->details, 0, sizeof(t->details));
     t->typestring_offset = 0;
     t->ptrdesc = 0;
@@ -189,14 +188,12 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
 
 type_t *type_new_alias(type_t *t, const char *name)
 {
-    type_t *a = duptype(t, 0);
+    type_t *a = make_type(t->type_type);
 
     a->name = xstrdup(name);
     a->attrs = NULL;
-    a->orig = t;
+    a->details.alias.aliasee.type = t;
     a->is_alias = TRUE;
-    /* for pointer types */
-    a->details = t->details;
     init_loc_info(&a->loc_info);
 
     return a;
@@ -438,6 +435,7 @@ static int compute_method_indexes(type_t *iface)
 
 void type_interface_define(type_t *iface, type_t *inherit, statement_list_t *stmts)
 {
+    assert(type_get_type_detect_alias(iface) == TYPE_INTERFACE);
     iface->details.iface = xmalloc(sizeof(*iface->details.iface));
     iface->details.iface->disp_props = NULL;
     iface->details.iface->disp_methods = NULL;
@@ -451,6 +449,7 @@ void type_interface_define(type_t *iface, type_t *inherit, statement_list_t *stm
 
 void type_dispinterface_define(type_t *iface, var_list_t *props, var_list_t *methods)
 {
+    assert(type_get_type_detect_alias(iface) == TYPE_INTERFACE);
     iface->details.iface = xmalloc(sizeof(*iface->details.iface));
     iface->details.iface->disp_props = props;
     iface->details.iface->disp_methods = methods;
@@ -465,6 +464,7 @@ void type_dispinterface_define(type_t *iface, var_list_t *props, var_list_t *met
 
 void type_dispinterface_define_from_iface(type_t *dispiface, type_t *iface)
 {
+    assert(type_get_type_detect_alias(iface) == TYPE_INTERFACE);
     dispiface->details.iface = xmalloc(sizeof(*dispiface->details.iface));
     dispiface->details.iface->disp_props = NULL;
     dispiface->details.iface->disp_methods = NULL;
@@ -479,6 +479,7 @@ void type_dispinterface_define_from_iface(type_t *dispiface, type_t *iface)
 
 void type_module_define(type_t *module, statement_list_t *stmts)
 {
+    assert(type_get_type_detect_alias(module) == TYPE_MODULE);
     if (module->details.module) error_loc("multiple definition error\n");
     module->details.module = xmalloc(sizeof(*module->details.module));
     module->details.module->stmts = stmts;
@@ -487,6 +488,7 @@ void type_module_define(type_t *module, statement_list_t *stmts)
 
 type_t *type_coclass_define(type_t *coclass, ifref_list_t *ifaces)
 {
+    assert(type_get_type_detect_alias(coclass) == TYPE_COCLASS);
     coclass->details.coclass.ifaces = ifaces;
     coclass->defined = TRUE;
     return coclass;

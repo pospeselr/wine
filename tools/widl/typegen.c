@@ -197,7 +197,7 @@ static void *get_aliaschain_attrp(const type_t *type, enum attr_type attr)
         if (is_attr(t->attrs, attr))
             return get_attrp(t->attrs, attr);
         else if (type_is_alias(t))
-            t = type_alias_get_aliasee(t);
+            t = type_alias_get_aliasee_type(t);
         else return NULL;
     }
 }
@@ -267,7 +267,7 @@ unsigned char get_pointer_fc(const type_t *type, const attr_list_t *attrs, int t
     if (pointer_type)
         return pointer_type;
 
-    for (t = type; type_is_alias(t); t = type_alias_get_aliasee(t))
+    for (t = type; type_is_alias(t); t = type_alias_get_aliasee_type(t))
     {
         pointer_type = get_attrv(t->attrs, ATTR_POINTERTYPE);
         if (pointer_type)
@@ -316,7 +316,7 @@ static type_t *get_user_type(const type_t *t, const char **pname)
         }
 
         if (type_is_alias(t))
-            t = type_alias_get_aliasee(t);
+            t = type_alias_get_aliasee_type(t);
         else
             return NULL;
     }
@@ -857,7 +857,7 @@ static const char *get_context_handle_type_name(const type_t *type)
     const type_t *t;
     for (t = type;
          is_ptr(t) || type_is_alias(t);
-         t = type_is_alias(t) ? type_alias_get_aliasee(t) : type_pointer_get_ref_type(t))
+         t = type_is_alias(t) ? type_alias_get_aliasee_type(t) : type_pointer_get_ref_type(t))
         if (is_attr(t->attrs, ATTR_CONTEXTHANDLE))
             return t->name;
     assert(0);
@@ -912,10 +912,10 @@ void write_parameters_init(FILE *file, int indent, const var_t *func, const char
     if (!is_void(var->declspec.type))
         write_var_init(file, indent, var->declspec.type, var->name, local_var_prefix);
 
-    if (!type_get_function_args(func->declspec.type))
+    if (!type_function_get_args(func->declspec.type))
         return;
 
-    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+    LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
         write_var_init(file, indent, var->declspec.type, var->name, local_var_prefix);
 
     fprintf(file, "\n");
@@ -1011,7 +1011,7 @@ static unsigned char get_parameter_fc( const var_t *var, int is_return, unsigned
         break;
     case TGT_ARRAY:
         *flags |= MustFree;
-        if (type_array_is_decl_as_ptr(var->declspec.type) && var->declspec.type->details.array.ptr_tfsoff &&
+        if (type_array_is_decl_as_ptr(var->declspec.type) && type_get_details(var->declspec.type)->array.ptr_tfsoff &&
             get_pointer_fc( var->declspec.type, var->attrs, !is_return ) == FC_RP)
         {
             *typestring_offset = var->declspec.type->typestring_offset;
@@ -1128,7 +1128,7 @@ static unsigned char get_parameter_fc( const var_t *var, int is_return, unsigned
 static unsigned char get_func_oi2_flags( const var_t *func )
 {
     const var_t *var;
-    var_list_t *args = type_get_function_args( func->declspec.type );
+    var_list_t *args = type_function_get_args( func->declspec.type );
     var_t *retval = type_function_get_retval( func->declspec.type );
     unsigned char oi2_flags = 0x40;  /* HasExtensions */
     unsigned short flags;
@@ -1230,8 +1230,10 @@ static unsigned int write_old_procformatstring_type(FILE *file, int indent, cons
 
         if (!is_interpreted && is_array(var->declspec.type) &&
             type_array_is_decl_as_ptr(var->declspec.type) &&
-            var->declspec.type->details.array.ptr_tfsoff)
+            type_get_details(var->declspec.type)->array.ptr_tfsoff)
+        {
             offset = var->declspec.type->typestring_offset;
+        }
 
         if (is_return)
             print_file(file, indent, "0x52,    /* FC_RETURN_PARAM */\n");
@@ -1254,7 +1256,7 @@ int is_interpreted_func( const type_t *iface, const var_t *func )
 {
     const char *str;
     const var_t *var;
-    const var_list_t *args = type_get_function_args( func->declspec.type );
+    const var_list_t *args = type_function_get_args( func->declspec.type );
     const type_t *ret_type = type_function_get_rettype( func->declspec.type );
 
     if (type_get_type( ret_type ) == TYPE_BASIC)
@@ -1305,7 +1307,7 @@ static void write_proc_func_header( FILE *file, int indent, const type_t *iface,
                                     unsigned short num_proc )
 {
     var_t *var;
-    var_list_t *args = type_get_function_args( func->declspec.type );
+    var_list_t *args = type_function_get_args( func->declspec.type );
     unsigned char explicit_fc, implicit_fc;
     unsigned char handle_flags;
     const var_t *handle_var = get_func_handle_var( iface, func, &explicit_fc, &implicit_fc );
@@ -1394,7 +1396,7 @@ static void write_proc_func_header( FILE *file, int indent, const type_t *iface,
 
         if (is_attr( func->attrs, ATTR_NOTIFY )) ext_flags |= 0x08;  /* HasNotify */
         if (is_attr( func->attrs, ATTR_NOTIFYFLAG )) ext_flags |= 0x10;  /* HasNotify2 */
-        if (iface == iface->details.iface->async_iface) oi2_flags |= 0x20;
+        if (iface == type_get_const_details(iface)->iface->async_iface) oi2_flags |= 0x20;
 
         size = get_function_buffer_size( func, PASS_IN );
         print_file( file, indent, "NdrFcShort(0x%x),\t/* client buffer = %u */\n", size, size );
@@ -1445,10 +1447,10 @@ static void write_procformatstring_func( FILE *file, int indent, const type_t *i
     if (is_interpreted) write_proc_func_header( file, indent, iface, func, offset, num_proc );
 
     /* emit argument data */
-    if (type_get_function_args(func->declspec.type))
+    if (type_function_get_args(func->declspec.type))
     {
         const var_t *var;
-        LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+        LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
         {
             print_file( file, 0, "/* %u (parameter %s) */\n", *offset, var->name );
             if (is_new_style)
@@ -1488,13 +1490,13 @@ static void for_each_iface(const statement_list_t *stmts,
 
     if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, const statement_t, entry )
     {
-        if (stmt->type != STMT_TYPE || type_get_type(stmt->u.type) != TYPE_INTERFACE)
+        if (stmt->type != STMT_TYPE || type_get_type_detect_alias(stmt->u.type) != TYPE_INTERFACE)
             continue;
         iface = stmt->u.type;
         if (!pred(iface)) continue;
         proc(iface, file, indent, offset);
-        if (iface->details.iface->async_iface)
-            proc(iface->details.iface->async_iface, file, indent, offset);
+        if (type_get_const_details(iface)->iface->async_iface)
+            proc(type_get_const_details(iface)->iface->async_iface, file, indent, offset);
     }
 }
 
@@ -1669,7 +1671,7 @@ static unsigned int write_conf_or_var_desc(FILE *file, const type_t *cont_type,
 
         if (type_get_type(cont_type) == TYPE_FUNCTION)
         {
-            var_list_t *args = type_get_function_args( cont_type );
+            var_list_t *args = type_function_get_args( cont_type );
 
             if (is_object( iface )) offset += pointer_size;
             if (args) LIST_FOR_EACH_ENTRY( var, args, const var_t, entry )
@@ -2079,9 +2081,9 @@ int is_full_pointer_function(const var_t *func)
     const var_t *var;
     if (type_has_full_pointer(type_function_get_rettype(func->declspec.type), func->attrs, TRUE))
         return TRUE;
-    if (!type_get_function_args(func->declspec.type))
+    if (!type_function_get_args(func->declspec.type))
         return FALSE;
-    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+    LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
         if (type_has_full_pointer( var->declspec.type, var->attrs, TRUE ))
             return TRUE;
     return FALSE;
@@ -3621,7 +3623,7 @@ static unsigned int write_type_tfs(FILE *file, const attr_list_t *attrs,
                 if (ptr_type != FC_RP) update_tfsoff( type, off, file );
                 *typeformat_offset += 4;
             }
-            type->details.array.ptr_tfsoff = off;
+            type_get_details(type)->array.ptr_tfsoff = off;
         }
         return off;
     }
@@ -3711,8 +3713,8 @@ static void process_tfs_iface(type_t *iface, FILE *file, int indent, unsigned in
                 var->typestring_offset = write_type_tfs( file, var->attrs, var->declspec.type, func->name,
                                                          TYPE_CONTEXT_RETVAL, offset);
 
-            if (type_get_function_args(func->declspec.type))
-                LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), var_t, entry )
+            if (type_function_get_args(func->declspec.type))
+                LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), var_t, entry )
                     var->typestring_offset = write_type_tfs( file, var->attrs, var->declspec.type, var->name,
                                                              TYPE_CONTEXT_TOPLEVELPARAM, offset );
             break;
@@ -3911,9 +3913,9 @@ static unsigned int get_function_buffer_size( const var_t *func, enum pass pass 
     const var_t *var;
     unsigned int total_size = 0, alignment;
 
-    if (type_get_function_args(func->declspec.type))
+    if (type_function_get_args(func->declspec.type))
     {
-        LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+        LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
         {
             total_size += get_required_buffer_size(var, &alignment, pass);
             total_size += alignment;
@@ -4350,10 +4352,10 @@ static void write_remoting_arg(FILE *file, int indent, const var_t *func, const 
                 ((tc == FC_SMVARRAY || tc == FC_LGVARRAY) && in_attr) ||
                 (tc == FC_CARRAY && !in_attr))
             {
-                if (type_array_is_decl_as_ptr(type) && type->details.array.ptr_tfsoff)
+                if (type_array_is_decl_as_ptr(type) && type_get_const_details(type)->array.ptr_tfsoff)
                 {
                     print_phase_function(file, indent, "Pointer", local_var_prefix, phase, var,
-                                         type->details.array.ptr_tfsoff);
+                                         type_get_const_details(type)->array.ptr_tfsoff);
                     break;
                 }
                 print_phase_function(file, indent, array_type, local_var_prefix, phase, var, start_offset);
@@ -4561,9 +4563,9 @@ void write_remoting_arguments(FILE *file, int indent, const var_t *func, const c
     else
     {
         const var_t *var;
-        if (!type_get_function_args(func->declspec.type))
+        if (!type_function_get_args(func->declspec.type))
             return;
-        LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+        LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
             write_remoting_arg( file, indent, func, local_var_prefix, pass, phase, var );
     }
 }
@@ -4619,10 +4621,10 @@ void declare_stub_args( FILE *file, int indent, const var_t *func )
         }
     }
 
-    if (!type_get_function_args(func->declspec.type))
+    if (!type_function_get_args(func->declspec.type))
         return;
 
-    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+    LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
     {
         in_attr = is_attr(var->attrs, ATTR_IN);
         out_attr = is_attr(var->attrs, ATTR_OUT);
@@ -4673,10 +4675,10 @@ void assign_stub_out_args( FILE *file, int indent, const var_t *func, const char
     const var_t *var;
     type_t *ref;
 
-    if (!type_get_function_args(func->declspec.type))
+    if (!type_function_get_args(func->declspec.type))
         return;
 
-    LIST_FOR_EACH_ENTRY( var, type_get_function_args(func->declspec.type), const var_t, entry )
+    LIST_FOR_EACH_ENTRY( var, type_function_get_args(func->declspec.type), const var_t, entry )
     {
         in_attr = is_attr(var->attrs, ATTR_IN);
         out_attr = is_attr(var->attrs, ATTR_OUT);
@@ -4783,7 +4785,7 @@ void write_func_param_struct( FILE *file, const type_t *iface, const type_t *fun
                               const char *var_decl, int add_retval )
 {
     var_t *retval = type_function_get_retval( func );
-    const var_list_t *args = type_get_function_args( func );
+    const var_list_t *args = type_function_get_args( func );
     const var_t *arg;
     int needs_packing;
     unsigned int align = 0;
@@ -4833,7 +4835,7 @@ void write_func_param_struct( FILE *file, const type_t *iface, const type_t *fun
 
 void write_pointer_checks( FILE *file, int indent, const var_t *func )
 {
-    const var_list_t *args = type_get_function_args( func->declspec.type );
+    const var_list_t *args = type_function_get_args( func->declspec.type );
     const var_t *var;
 
     if (!args) return;
@@ -4965,7 +4967,7 @@ void write_client_call_routine( FILE *file, const type_t *iface, const var_t *fu
 {
     type_t *rettype = type_function_get_rettype( func->declspec.type );
     int has_ret = !is_void( rettype );
-    const var_list_t *args = type_get_function_args( func->declspec.type );
+    const var_list_t *args = type_function_get_args( func->declspec.type );
     const var_t *arg;
     int len, needs_params = 0;
 

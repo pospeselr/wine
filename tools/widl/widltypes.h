@@ -394,6 +394,11 @@ struct bitfield_details
   const expr_t *bits;
 };
 
+struct alias_details
+{
+  struct _decl_spec_t aliasee;
+};
+
 #define HASHMAX 64
 
 struct namespace {
@@ -422,26 +427,28 @@ enum type_type
     TYPE_BITFIELD,
 };
 
+typedef union _details_t
+{
+  struct struct_details *structure;
+  struct enumeration_details *enumeration;
+  struct func_details *function;
+  struct iface_details *iface;
+  struct module_details *module;
+  struct array_details array;
+  struct coclass_details coclass;
+  struct basic_details basic;
+  struct pointer_details pointer;
+  struct bitfield_details bitfield;
+  struct alias_details alias;
+} details_t;
+
 struct _type_t {
   const char *name;
   struct namespace *namespace;
   enum type_type type_type;
   attr_list_t *attrs;
-  union
-  {
-    struct struct_details *structure;
-    struct enumeration_details *enumeration;
-    struct func_details *function;
-    struct iface_details *iface;
-    struct module_details *module;
-    struct array_details array;
-    struct coclass_details coclass;
-    struct basic_details basic;
-    struct pointer_details pointer;
-    struct bitfield_details bitfield;
-  } details;
+  details_t details;
   const char *c_name;
-  type_t *orig;                   /* dup'd types */
   unsigned int typestring_offset;
   unsigned int ptrdesc;           /* used for complex structs */
   int typelib_idx;
@@ -588,35 +595,6 @@ var_list_t *append_var(var_list_t *list, var_t *var);
 void init_loc_info(loc_info_t *);
 
 char *format_namespace(struct namespace *namespace, const char *prefix, const char *separator, const char *suffix);
-
-static inline var_list_t *type_get_function_args(const type_t *func_type)
-{
-  return func_type->details.function->args;
-}
-
-static inline enum type_type type_get_type_detect_alias(const type_t *type)
-{
-    if (type->is_alias)
-        return TYPE_ALIAS;
-    return type->type_type;
-}
-
-#define STATEMENTS_FOR_EACH_FUNC(stmt, stmts) \
-  if (stmts) LIST_FOR_EACH_ENTRY( stmt, stmts, statement_t, entry ) \
-    if (stmt->type == STMT_DECLARATION && stmt->u.var->declspec.stgclass == STG_NONE && \
-        type_get_type_detect_alias(stmt->u.var->declspec.type) == TYPE_FUNCTION)
-
-static inline int statements_has_func(const statement_list_t *stmts)
-{
-  const statement_t *stmt;
-  int has_func = 0;
-  STATEMENTS_FOR_EACH_FUNC(stmt, stmts)
-  {
-    has_func = 1;
-    break;
-  }
-  return has_func;
-}
 
 static inline int is_global_namespace(const struct namespace *namespace)
 {

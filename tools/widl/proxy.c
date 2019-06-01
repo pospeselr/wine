@@ -195,7 +195,7 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
   int has_ret = !is_void(retval->declspec.type);
   int has_full_pointer = is_full_pointer_function(func);
   const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
-  const var_list_t *args = type_get_function_args(func->declspec.type);
+  const var_list_t *args = type_function_get_args(func->declspec.type);
   if (!callconv) callconv = "STDMETHODCALLTYPE";
 
   indent = 0;
@@ -246,7 +246,7 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
     write_full_pointer_init(proxy, indent, func, FALSE);
 
   /* FIXME: trace */
-  clear_output_vars( type_get_function_args(func->declspec.type) );
+  clear_output_vars( type_function_get_args(func->declspec.type) );
 
   print_proxy( "RpcTryExcept\n" );
   print_proxy( "{\n" );
@@ -301,7 +301,7 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
   print_proxy( "{\n" );
   if (has_ret) {
     indent++;
-    proxy_free_variables( type_get_function_args(func->declspec.type), "" );
+    proxy_free_variables( type_function_get_args(func->declspec.type), "" );
     print_proxy( "_RetVal = NdrProxyErrorHandler(RpcExceptionCode());\n" );
     indent--;
   }
@@ -389,9 +389,9 @@ static void gen_stub(type_t *iface, const var_t *func, const char *cas,
   else fprintf(proxy, "__frame->_This->lpVtbl->%s", get_name(func));
   fprintf(proxy, "(__frame->_This");
 
-  if (type_get_function_args(func->declspec.type))
+  if (type_function_get_args(func->declspec.type))
   {
-      LIST_FOR_EACH_ENTRY( arg, type_get_function_args(func->declspec.type), const var_t, entry )
+      LIST_FOR_EACH_ENTRY( arg, type_function_get_args(func->declspec.type), const var_t, entry )
           fprintf(proxy, ", %s__frame->%s", is_array(arg->declspec.type) && !type_array_is_decl_as_ptr(arg->declspec.type) ? "*" :"" , arg->name);
   }
   fprintf(proxy, ");\n");
@@ -434,7 +434,7 @@ static void gen_stub_thunk( type_t *iface, const var_t *func, unsigned int proc_
 {
     int has_ret = !is_void( type_function_get_rettype( func->declspec.type ));
     const var_t *arg, *callas = is_callas( func->attrs );
-    const var_list_t *args = type_get_function_args( func->declspec.type );
+    const var_list_t *args = type_function_get_args( func->declspec.type );
 
     indent = 0;
     print_proxy( "void __RPC_API %s_%s_Thunk( PMIDL_STUB_MESSAGE pStubMsg )\n",
@@ -614,14 +614,14 @@ static void write_proxy(type_t *iface, unsigned int *proc_offset)
     if (!is_local(func->attrs)) {
       const var_t *cas = is_callas(func->attrs);
       const char *cname = cas ? cas->name : NULL;
-      int idx = func->declspec.type->details.function->idx;
+      int idx = type_get_details(func->declspec.type)->function->idx;
       if (cname) {
           const statement_t *stmt2;
           STATEMENTS_FOR_EACH_FUNC(stmt2, type_iface_get_stmts(iface)) {
               const var_t *m = stmt2->u.var;
               if (!strcmp(m->name, cname))
               {
-                  idx = m->declspec.type->details.function->idx;
+                  idx = type_get_details(m->declspec.type)->function->idx;
                   break;
               }
           }
@@ -739,7 +739,7 @@ static void write_proxy(type_t *iface, unsigned int *proc_offset)
   print_proxy( "{\n");
   indent++;
   print_proxy( "%s_%s\n",
-               iface->details.iface->async_iface == iface ? "CStdAsyncStubBuffer" : "CStdStubBuffer",
+               type_get_details(iface)->iface->async_iface == iface ? "CStdAsyncStubBuffer" : "CStdStubBuffer",
                need_delegation_indirect(iface) ? "DELEGATING_METHODS" : "METHODS");
   indent--;
   print_proxy( "}\n");
@@ -840,8 +840,8 @@ static void write_proxy_stmts(const statement_list_t *stmts, unsigned int *proc_
       if (need_proxy(iface))
       {
         write_proxy(iface, proc_offset);
-        if (iface->details.iface->async_iface)
-          write_proxy(iface->details.iface->async_iface, proc_offset);
+        if (type_get_details(iface)->iface->async_iface)
+          write_proxy(type_get_details(iface)->iface->async_iface, proc_offset);
       }
     }
   }
@@ -870,9 +870,9 @@ static void build_iface_list( const statement_list_t *stmts, type_t **ifaces[], 
             {
                 *ifaces = xrealloc( *ifaces, (*count + 1) * sizeof(**ifaces) );
                 (*ifaces)[(*count)++] = iface;
-                if (iface->details.iface->async_iface)
+                if (type_get_details(iface)->iface->async_iface)
                 {
-                    iface = iface->details.iface->async_iface;
+                    iface = type_get_details(iface)->iface->async_iface;
                     *ifaces = xrealloc( *ifaces, (*count + 1) * sizeof(**ifaces) );
                     (*ifaces)[(*count)++] = iface;
                 }
@@ -1012,7 +1012,7 @@ static void write_proxy_routines(const statement_list_t *stmts)
   table_version = get_stub_mode() == MODE_Oif ? 2 : 1;
   for (i = 0; i < count; i++)
   {
-      if (interfaces[i]->details.iface->async_iface != interfaces[i]) continue;
+      if (type_get_details(interfaces[i])->iface->async_iface != interfaces[i]) continue;
       if (table_version != 6)
       {
           fprintf(proxy, "static const IID *_AsyncInterfaceTable[] =\n");
