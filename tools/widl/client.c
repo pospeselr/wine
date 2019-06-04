@@ -54,10 +54,10 @@ static void write_client_func_decl( const type_t *iface, const var_t *func )
 {
     const char *callconv = get_attrp(func->declspec.type->attrs, ATTR_CALLCONV);
     const var_list_t *args = type_get_function_args(func->declspec.type);
-    type_t *rettype = type_function_get_rettype(func->declspec.type);
+    const decl_spec_t *retdeclspec = type_function_get_retdeclspec(func->declspec.type);
 
     if (!callconv) callconv = "__cdecl";
-    write_type_decl_left(client, rettype);
+    write_declspec_decl_left(client, retdeclspec);
     fprintf(client, " %s ", callconv);
     fprintf(client, "%s%s(\n", prefix_client, get_name(func));
     indent++;
@@ -136,7 +136,7 @@ static void write_function_stub( const type_t *iface, const var_t *func,
     if (has_ret)
     {
         print_client("%s", "");
-        write_type_decl(client, retval->declspec.type, retval->name);
+        write_declspec_decl(client, &retval->declspec, retval->name);
         fprintf(client, ";\n");
     }
     print_client("RPC_MESSAGE _RpcMessage;\n");
@@ -488,7 +488,7 @@ static void write_implicithandledecl(type_t *iface)
 
     if (implicit_handle)
     {
-        write_type_decl( client, implicit_handle->declspec.type, implicit_handle->name );
+        write_declspec_decl( client, &implicit_handle->declspec, implicit_handle->name );
         fprintf(client, ";\n\n");
     }
 }
