@@ -55,7 +55,8 @@ static void write_function_stub(const type_t *iface, const var_t *func, unsigned
     unsigned char explicit_fc, implicit_fc;
     int has_full_pointer = is_full_pointer_function(func);
     const var_t *handle_var = get_func_handle_var( iface, func, &explicit_fc, &implicit_fc );
-    type_t *ret_type = type_function_get_rettype(func->declspec.type);
+    const decl_spec_t *ret_declspec = type_function_get_retdeclspec(func->declspec.type);
+    type_t *ret_type = ret_declspec->type;
 
     if (is_interpreted_func( iface, func )) return;
 
@@ -159,7 +160,7 @@ static void write_function_stub(const type_t *iface, const var_t *func, unsigned
     {
         print_server("__frame->_RetVal = NDRSContextUnmarshall((char*)0, _pRpcMessage->DataRepresentation);\n");
         print_server("*((");
-        write_type_decl(server, ret_type, NULL);
+        write_declspec_decl(server, ret_declspec, NULL);
         fprintf(server, "*)NDRSContextValue(__frame->_RetVal)) = ");
     }
     else
@@ -185,7 +186,7 @@ static void write_function_stub(const type_t *iface, const var_t *func, unsigned
                  * be direct, otherwise it is a pointer */
                 const char *ch_ptr = is_aliaschain_attr(var->declspec.type, ATTR_CONTEXTHANDLE) ? "*" : "";
                 print_server("(");
-                write_type_decl_left(server, var->declspec.type);
+                write_declspec_decl_left(server, &var->declspec);
                 fprintf(server, ")%sNDRSContextValue(__frame->%s)", ch_ptr, var->name);
             }
             else
