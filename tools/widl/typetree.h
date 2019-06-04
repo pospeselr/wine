@@ -105,9 +105,14 @@ static inline var_t *type_function_get_retval(const type_t *type)
     return type->details.function->retval;
 }
 
+static inline const decl_spec_t *type_function_get_retdeclspec(const type_t *type)
+{
+    return &type_function_get_retval(type)->declspec;
+}
+
 static inline type_t *type_function_get_rettype(const type_t *type)
 {
-    return type_function_get_retval(type)->declspec.type;
+    return type_function_get_retdeclspec(type)->type;
 }
 
 static inline var_list_t *type_enum_get_values(const type_t *type)
