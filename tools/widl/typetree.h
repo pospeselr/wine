@@ -379,4 +379,36 @@ static inline const details_t *type_get_const_details(const type_t* type)
     return &type->details;
 }
 
+static inline int type_is_pointerish(const type_t *type)
+{
+    type = type_get_real_type(type);
+    return type_get_type(type) == TYPE_ARRAY || type_get_type(type) == TYPE_POINTER;
+}
+
+static inline type_t * type_get_pointer_chain_tail(const type_t *type)
+{
+    type_t *pointee = NULL;
+    type_t *pointer = type_get_real_type(type);
+
+    if (type_get_type(pointer) == TYPE_ARRAY)
+    {
+        pointee = type_array_get_element_type(pointer);
+    }
+    else if (type_get_type(pointer) == TYPE_POINTER)
+    {
+        pointee = type_pointer_get_ref_type(pointer);
+    }
+    else
+    {
+        assert(FALSE);
+    }
+
+    if (type_is_pointerish(pointee))
+    {
+        return type_get_pointer_chain_tail(pointee);
+    }
+
+    return pointee;
+}
+
 #endif /* WIDL_TYPE_TREE_H */

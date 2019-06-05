@@ -202,7 +202,7 @@ type_t *type_new_alias(const decl_spec_t *ds, const char *name)
 type_t *type_new_module(char *name)
 {
     type_t *type = get_type(TYPE_MODULE, name, NULL, 0);
-    if (type->type_type != TYPE_MODULE || type->defined)
+    if (type->type_type != TYPE_MODULE || type_is_defined(type))
         error_loc("%s: redefinition error; original definition was at %s:%d\n",
                   type->name, type->loc_info.input_name, type->loc_info.line_number);
     type->name = name;
@@ -212,7 +212,7 @@ type_t *type_new_module(char *name)
 type_t *type_new_coclass(char *name)
 {
     type_t *type = get_type(TYPE_COCLASS, name, NULL, 0);
-    if (type->type_type != TYPE_COCLASS || type->defined)
+    if (type->type_type != TYPE_COCLASS || type_is_defined(type))
         error_loc("%s: redefinition error; original definition was at %s:%d\n",
                   type->name, type->loc_info.input_name, type->loc_info.line_number);
     type->name = name;
@@ -272,80 +272,99 @@ type_t *type_new_void(void)
 
 type_t *type_new_enum(const char *name, struct namespace *namespace, int defined, var_list_t *enums)
 {
-    type_t *tag_type = name ? find_type(name, namespace, tsENUM) : NULL;
-    type_t *t = make_type(TYPE_ENUM);
-    t->name = name;
-    t->namespace = namespace;
-
-    if (tag_type && tag_type->details.enumeration)
-        t->details.enumeration = tag_type->details.enumeration;
-    else if (defined)
-    {
-        t->details.enumeration = xmalloc(sizeof(*t->details.enumeration));
-        t->details.enumeration->enums = enums;
-        t->defined = TRUE;
-    }
+    type_t *t = NULL;
 
     if (name)
+        t = find_type(name, namespace, tsENUM);
+
+    if (!t)
+    {
+        t = make_type(TYPE_ENUM);
+        t->name = name;
+        t->namespace = namespace;
+        if (name)
+            reg_type(t, name, namespace, tsENUM);
+    }
+
+    if (!type_is_defined(t))
     {
         if (defined)
-            reg_type(t, name, namespace, tsENUM);
+        {
+            t->details.enumeration = xmalloc(sizeof(*t->details.enumeration));
+            t->details.enumeration->enums = enums;
+            t->defined = TRUE;
+        }
         else
+        {
             add_incomplete(t);
+        }
     }
+
     return t;
 }
 
 type_t *type_new_struct(char *name, struct namespace *namespace, int defined, var_list_t *fields)
 {
-    type_t *tag_type = name ? find_type(name, namespace, tsSTRUCT) : NULL;
-    type_t *t;
+    type_t *t = NULL;
 
-    /* avoid creating duplicate typelib type entries */
-    if (tag_type && do_typelib) return tag_type;
-
-    t = make_type(TYPE_STRUCT);
-    t->name = name;
-    t->namespace = namespace;
-
-    if (tag_type && tag_type->details.structure)
-        t->details.structure = tag_type->details.structure;
-    else if (defined)
-    {
-        t->details.structure = xmalloc(sizeof(*t->details.structure));
-        t->details.structure->fields = fields;
-        t->defined = TRUE;
-    }
     if (name)
+        t = find_type(name, namespace, tsSTRUCT);
+
+    if (!t)
+    {
+        t = make_type(TYPE_STRUCT);
+        t->name = name;
+        t->namespace = namespace;
+        if (name)
+            reg_type(t, name, namespace, tsSTRUCT);
+    }
+
+    if (!type_is_defined(t))
     {
         if (defined)
-            reg_type(t, name, namespace, tsSTRUCT);
+        {
+            t->details.structure = xmalloc(sizeof(*t->details.structure));
+            t->details.structure->fields = fields;
+            t->defined = TRUE;
+        }
         else
+        {
             add_incomplete(t);
+        }
     }
+
     return t;
 }
 
 type_t *type_new_nonencapsulated_union(const char *name, int defined, var_list_t *fields)
 {
-    type_t *tag_type = name ? find_type(name, NULL, tsUNION) : NULL;
-    type_t *t = make_type(TYPE_UNION);
-    t->name = name;
-    if (tag_type && tag_type->details.structure)
-        t->details.structure = tag_type->details.structure;
-    else if (defined)
-    {
-        t->details.structure = xmalloc(sizeof(*t->details.structure));
-        t->details.structure->fields = fields;
-        t->defined = TRUE;
-    }
+    type_t *t = NULL;
+
     if (name)
+        t = find_type(name, NULL, tsUNION);
+
+    if (!t)
+    {
+        t = make_type(TYPE_UNION);
+        t->name = name;
+        if (name)
+            reg_type(t, name, NULL, tsUNION);
+    }
+
+    if (!type_is_defined(t))
     {
         if (defined)
-            reg_type(t, name, NULL, tsUNION);
+        {
+            t->details.structure = xmalloc(sizeof(*t->details.structure));
+            t->details.structure->fields = fields;
+            t->defined = TRUE;
+        }
         else
+        {
             add_incomplete(t);
+        }
     }
+
     return t;
 }
 

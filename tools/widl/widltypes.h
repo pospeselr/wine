@@ -482,6 +482,13 @@ struct _var_t {
   unsigned int typestring_offset;
 
   struct _loc_info_t loc_info;
+  /* this flag indicates that this var's type (or pointed to type in the case of
+   * array or pointer) was not fully defined at the time of declaration.
+   * If this flag is set to TRUE then the type definition will not be written for this var
+   * If this flag is set to FALSE then the type definition will only be written if it has not
+   * been written yet (determined by the type_t's 'written' flag)
+   */
+  int declonly : 1;
 
   /* parser-internal */
   struct list entry;
@@ -565,6 +572,13 @@ struct _statement_t {
         typelib_t *lib;
         type_list_t *type_list;
     } u;
+  /* this flag indicates that this statement's type (or pointed to type in the case of
+   * array or pointer) was not fully defined at the time of declaration.
+   * If this flag is set to TRUE then the type definition will not be written for this statement
+   * If this flag is set to FALSE then the type definition will only be written if it has not
+   * been written yet (determined by the type_t's 'written' flag)
+   */
+    int declonly : 1;
 };
 
 struct _warning_t {

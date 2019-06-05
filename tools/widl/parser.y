@@ -1821,6 +1821,10 @@ var_list_t *append_var(var_list_t *list, var_t *var)
         list_init( list );
     }
     list_add_tail( list, &var->entry );
+
+    if (var->declspec.type)
+        var->declonly = !type_is_defined(var->declspec.type);
+
     return list;
 }
 
@@ -1844,6 +1848,7 @@ var_t *make_var(char *name)
   v->attrs = NULL;
   v->eval = NULL;
   init_loc_info(&v->loc_info);
+  v->declonly = TRUE;
   return v;
 }
 
@@ -1979,14 +1984,14 @@ type_t *reg_type(type_t *type, const char *name, struct namespace *namespace, in
   nt->t = t;
   nt->next = namespace->type_hash[hash];
   namespace->type_hash[hash] = nt;
-  if ((t == tsSTRUCT || t == tsUNION))
+  if ((t == tsSTRUCT || t == tsUNION || t == tsENUM))
     fix_incomplete_types(type);
   return type;
 }
 
 static int is_incomplete(const type_t *t)
 {
-  return !t->defined &&
+  return !type_is_defined(t) &&
     (type_get_type_detect_alias(t) == TYPE_ENUM ||
      type_get_type_detect_alias(t) == TYPE_STRUCT ||
      type_get_type_detect_alias(t) == TYPE_UNION ||
@@ -3046,6 +3051,10 @@ static statement_t *make_statement_type_decl(type_t *type)
 {
     statement_t *stmt = make_statement(STMT_TYPE);
     stmt->u.type = type;
+    if (type_is_defined(type))
+    {
+        stmt->declonly = FALSE;
+    }
     return stmt;
 }
 
@@ -3121,6 +3130,7 @@ static statement_t *make_statement_typedef(declarator_list_t *decls)
     declarator_t *decl, *next;
     statement_t *stmt;
     type_list_t **type_list;
+    int defined = TRUE;
 
     if (!decls) return NULL;
 
@@ -3132,6 +3142,18 @@ static statement_t *make_statement_typedef(declarator_list_t *decls)
     {
         var_t *var = decl->var;
         type_t *type = find_type_or_error(var->name, 0);
+
+        /* ensure that all of the types in this typedef statement have been defined
+         * before setting its declonly flag */
+        if (type_is_pointerish(type))
+        {
+            defined = defined & type_is_defined(type_get_pointer_chain_tail(type));
+        }
+        else
+        {
+            defined = defined & type_is_defined(type_get_real_type(type));
+        }
+
         *type_list = xmalloc(sizeof(type_list_t));
         (*type_list)->type = type;
         (*type_list)->next = NULL;
@@ -3141,6 +3163,7 @@ static statement_t *make_statement_typedef(declarator_list_t *decls)
         free(var);
     }
 
+    stmt->declonly = !defined;
     return stmt;
 }
 
@@ -3181,7 +3204,7 @@ void init_loc_info(loc_info_t *i)
 
 static void check_def(const type_t *t)
 {
-    if (t->defined)
+    if (type_is_defined(t))
         error_loc("%s: redefinition error; original definition was at %s:%d\n",
                   t->name, t->loc_info.input_name, t->loc_info.line_number);
 }
