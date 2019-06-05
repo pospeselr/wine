@@ -235,6 +235,18 @@ enum storage_class
     STG_REGISTER,
 };
 
+enum type_qualifier
+{
+    TYPE_QUALIFIER_NONE,
+    TYPE_QUALIFIER_CONST
+};
+
+enum function_specifier
+{
+    FUNCTION_SPECIFIER_NONE,
+    FUNCTION_SPECIFIER_INLINE,
+};
+
 enum statement_type
 {
     STMT_LIBRARY,
@@ -297,8 +309,9 @@ struct str_list_entry_t
 struct _decl_spec_t
 {
   type_t *type;
-  attr_list_t *attrs;
   enum storage_class stgclass;
+  enum type_qualifier typequalifier;
+  enum function_specifier funcspecifier;
 };
 
 struct _attr_t {
@@ -626,9 +639,9 @@ static inline int is_global_namespace(const struct namespace *namespace)
 static inline decl_spec_t *init_declspec(decl_spec_t *declspec, type_t *type)
 {
   declspec->type = type;
-  declspec->attrs = NULL;
   declspec->stgclass = STG_NONE;
-
+  declspec->typequalifier=TYPE_QUALIFIER_NONE;
+  declspec->funcspecifier=FUNCTION_SPECIFIER_NONE;
   return declspec;
 }
 

@@ -309,7 +309,7 @@ void write_declspec_left(FILE* h, const decl_spec_t *ds, enum name_type name_typ
 
   name = type_get_name(t, name_type);
 
-  if (is_attr(t->attrs, ATTR_CONST) &&
+  if ((ds->typequalifier == TYPE_QUALIFIER_CONST) &&
       (type_is_alias(t) || !is_ptr(t)))
     fprintf(h, "const ");
 
@@ -360,7 +360,7 @@ void write_declspec_left(FILE* h, const decl_spec_t *ds, enum name_type name_typ
       {
         write_declspec_left(h, type_pointer_get_ref(t), name_type, declonly);
         write_pointer_left(h, type_pointer_get_ref_type(t));
-        if (is_attr(t->attrs, ATTR_CONST)) fprintf(h, "const ");
+        if (ds->typequalifier == TYPE_QUALIFIER_CONST) fprintf(h, "const ");
         break;
       }
       case TYPE_ARRAY:
@@ -501,14 +501,16 @@ static void write_type_v(FILE *h, const decl_spec_t *ds, int is_field, int declo
   if (!h) return;
 
   if (t) {
-    for (pt = t; is_ptr(pt); pt = type_pointer_get_ref_type(pt), ptr_level++)
+    const decl_spec_t *dpt = NULL;
+    for (dpt = ds; is_ptr(dpt->type); dpt = type_pointer_get_ref(dpt->type), ptr_level++)
       ;
+    pt = dpt->type;
 
     if (type_get_type_detect_alias(pt) == TYPE_FUNCTION) {
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      if (is_attr(pt->attrs, ATTR_INLINE)) fprintf(h, "inline ");
+      if (dpt->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
       write_declspec_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly);
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
@@ -809,17 +811,17 @@ static void write_typedef(FILE *header, type_t *type)
 
 int is_const_decl(const var_t *var)
 {
-  const type_t *t;
+  const decl_spec_t *ds;
   /* strangely, MIDL accepts a const attribute on any pointer in the
   * declaration to mean that data isn't being instantiated. this appears
   * to be a bug, but there is no benefit to being incompatible with MIDL,
   * so we'll do the same thing */
-  for (t = var->declspec.type; ; )
+  for (ds = &var->declspec; ;)
   {
-    if (is_attr(t->attrs, ATTR_CONST))
+    if (ds->typequalifier == TYPE_QUALIFIER_CONST)
       return TRUE;
-    else if (is_ptr(t))
-      t = type_pointer_get_ref_type(t);
+    else if (is_ptr(ds->type))
+      ds = type_pointer_get_ref(ds->type);
     else break;
   }
   return FALSE;
