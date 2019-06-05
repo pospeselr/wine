@@ -1695,7 +1695,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
   }
 
   if (decl->bits)
-    v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
+    v->declspec.type = type_new_bitfield(&v->declspec, decl->bits);
 
   return v;
 }
