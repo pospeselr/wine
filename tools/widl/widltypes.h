@@ -81,7 +81,6 @@ enum attr_type
     ATTR_CASE,
     ATTR_CODE,
     ATTR_COMMSTATUS,
-    ATTR_CONST, /* const pseudo-attribute */
     ATTR_CONTEXTHANDLE,
     ATTR_CONTROL,
     ATTR_DECODE,
@@ -116,7 +115,6 @@ enum attr_type
     ATTR_IMMEDIATEBIND,
     ATTR_IMPLICIT_HANDLE,
     ATTR_IN,
-    ATTR_INLINE,
     ATTR_INPUTSYNC,
     ATTR_LENGTHIS,
     ATTR_LIBLCID,
@@ -235,6 +233,18 @@ enum storage_class
     STG_REGISTER,
 };
 
+enum type_qualifier
+{
+    TYPE_QUALIFIER_NONE = 0,
+    TYPE_QUALIFIER_CONST = 1,
+};
+
+enum function_specifier
+{
+    FUNCTION_SPECIFIER_NONE,
+    FUNCTION_SPECIFIER_INLINE,
+};
+
 enum statement_type
 {
     STMT_LIBRARY,
@@ -297,8 +307,9 @@ struct str_list_entry_t
 struct _decl_spec_t
 {
   type_t *type;
-  attr_list_t *attrs;
   enum storage_class stgclass;
+  enum type_qualifier typequalifier;
+  enum function_specifier funcspecifier;
 };
 
 struct _attr_t {
@@ -478,7 +489,7 @@ struct _var_t {
 
 struct _declarator_t {
   var_t *var;
-  type_t *type;
+  decl_spec_t declspec;
   type_t *func_type;
   expr_t *bits;
 
@@ -604,9 +615,9 @@ static inline int is_global_namespace(const struct namespace *namespace)
 static inline decl_spec_t *init_declspec(decl_spec_t *declspec, type_t *type)
 {
   declspec->type = type;
-  declspec->attrs = NULL;
   declspec->stgclass = STG_NONE;
-
+  declspec->typequalifier=TYPE_QUALIFIER_NONE;
+  declspec->funcspecifier=FUNCTION_SPECIFIER_NONE;
   return declspec;
 }
 
