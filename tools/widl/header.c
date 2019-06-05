@@ -510,7 +510,7 @@ static void write_type_v(FILE *h, const decl_spec_t *ds, int is_field, int declo
       int i;
       const char *callconv = get_attrp(pt->attrs, ATTR_CALLCONV);
       if (!callconv && is_object_interface) callconv = "STDMETHODCALLTYPE";
-      if (dpt->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
+      if (!is_ptr(ds->type) && dpt->funcspecifier == FUNCTION_SPECIFIER_INLINE) fprintf(h, "inline ");
       write_declspec_left(h, type_function_get_retdeclspec(pt), NAME_DEFAULT, declonly);
       fputc(' ', h);
       if (ptr_level) fputc('(', h);
