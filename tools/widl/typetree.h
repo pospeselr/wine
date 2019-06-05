@@ -53,8 +53,8 @@ type_t *type_coclass_define(type_t *coclass, ifref_list_t *ifaces);
 int type_is_equal(const type_t *type1, const type_t *type2);
 const char *type_get_name(const type_t *type, enum name_type name_type);
 
-/* FIXME: shouldn't need to export this */
-type_t *duptype(type_t *t, int dupname);
+/* copy pointer type to deal with need for duplicate typeformat strings */
+type_t *dup_pointer_type(type_t *t);
 
 /* un-alias the type until finding the non-alias type */
 static inline type_t *type_get_real_type(const type_t *type)

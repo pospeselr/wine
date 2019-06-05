@@ -30,12 +30,16 @@
 #include "typetree.h"
 #include "header.h"
 
-type_t *duptype(type_t *t, int dupname)
+/* this function is only used in declare_var in parser.y, see FIXME note */
+type_t *dup_pointer_type(type_t *t)
 {
-  type_t *d = alloc_type();
+  type_t *d;
 
+  assert(is_ptr(t) && t->details.pointer.def_fc != FC_RP);
+
+  d = alloc_type();
   *d = *t;
-  if (dupname && t->name)
+  if (t->name)
     d->name = xstrdup(t->name);
 
   return d;
@@ -189,15 +193,19 @@ type_t *type_new_pointer(unsigned char pointer_default, type_t *ref, attr_list_t
 
 type_t *type_new_alias(const decl_spec_t *ds, const char *name)
 {
-    type_t *t = ds->type;
-    type_t *a = duptype(t, 0);
+    type_t *a = NULL;
+
+    assert(ds != NULL);
+    assert(name != NULL);
+
+    a = alloc_type();
+    /* copy over all the members before setting alias data */
+    *a = *ds->type;
 
     a->name = xstrdup(name);
     a->attrs = NULL;
     a->orig = *ds;
     a->is_alias = TRUE;
-    /* for pointer types */
-    a->details = t->details;
     init_loc_info(&a->loc_info);
 
     return a;
