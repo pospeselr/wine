@@ -284,14 +284,17 @@ type_t *type_new_void(void)
 
 type_t *type_new_enum(const char *name, struct namespace *namespace, int defined, var_list_t *enums)
 {
-    type_t *tag_type = name ? find_type(name, namespace, tsENUM) : NULL;
-    type_t *t = make_type(TYPE_ENUM);
+    type_t *t;
+
+    /* avoid creating duplicate typelib type entries */
+    if (name && (t = find_type(name, namespace, tsENUM)))
+        return t;
+
+    t = make_type(TYPE_ENUM);
     t->name = name;
     t->namespace = namespace;
 
-    if (tag_type && tag_type->details.enumeration)
-        t->details.enumeration = tag_type->details.enumeration;
-    else if (defined)
+    if (defined)
     {
         t->details.enumeration = xmalloc(sizeof(*t->details.enumeration));
         t->details.enumeration->enums = enums;
@@ -310,24 +313,23 @@ type_t *type_new_enum(const char *name, struct namespace *namespace, int defined
 
 type_t *type_new_struct(char *name, struct namespace *namespace, int defined, var_list_t *fields)
 {
-    type_t *tag_type = name ? find_type(name, namespace, tsSTRUCT) : NULL;
     type_t *t;
 
     /* avoid creating duplicate typelib type entries */
-    if (tag_type && do_typelib) return tag_type;
+    if (name && (t = find_type(name, namespace, tsSTRUCT)))
+        return t;
 
     t = make_type(TYPE_STRUCT);
     t->name = name;
     t->namespace = namespace;
 
-    if (tag_type && tag_type->details.structure)
-        t->details.structure = tag_type->details.structure;
-    else if (defined)
+    if (defined)
     {
         t->details.structure = xmalloc(sizeof(*t->details.structure));
         t->details.structure->fields = fields;
         t->defined = TRUE;
     }
+
     if (name)
     {
         if (defined)
@@ -340,17 +342,22 @@ type_t *type_new_struct(char *name, struct namespace *namespace, int defined, va
 
 type_t *type_new_nonencapsulated_union(const char *name, int defined, var_list_t *fields)
 {
-    type_t *tag_type = name ? find_type(name, NULL, tsUNION) : NULL;
-    type_t *t = make_type(TYPE_UNION);
+    type_t *t;
+
+    /* avoid creating duplicate typelib type entries */
+    if (name && (t = find_type(name, NULL, tsUNION)))
+        return t;
+
+    t = make_type(TYPE_UNION);
     t->name = name;
-    if (tag_type && tag_type->details.structure)
-        t->details.structure = tag_type->details.structure;
-    else if (defined)
+
+    if (defined)
     {
         t->details.structure = xmalloc(sizeof(*t->details.structure));
         t->details.structure->fields = fields;
         t->defined = TRUE;
     }
+
     if (name)
     {
         if (defined)
