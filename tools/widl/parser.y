@@ -61,6 +61,7 @@ static str_list_t *append_str(str_list_t *list, char *str);
 static attr_list_t *append_attr(attr_list_t *list, attr_t *attr);
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list);
 static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass);
+static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
@@ -1255,6 +1256,17 @@ static attr_list_t *move_attr(attr_list_t *dst, attr_list_t *src, enum attr_type
   return dst;
 }
 
+static attr_list_t *remove_attr(attr_list_t *lst, enum attr_type type)
+{
+  attr_t *attr;
+  LIST_FOR_EACH_ENTRY(attr, lst, attr_t, entry)
+    if (attr->type == type)
+    {
+      list_remove(&attr->entry);
+    }
+  return lst;
+}
+
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list)
 {
   struct list *entry;
@@ -1294,51 +1306,89 @@ static attr_list_t *map_attrs(const attr_list_t *list, map_attrs_filter_t filter
 
 static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass)
 {
+  enum type_qualifier typequalifier = TYPE_QUALIFIER_NONE;
+  enum function_specifier funcspecifier = FUNCTION_SPECIFIER_NONE;
+
+  assert(attr == NULL || attr->type == ATTR_CONST || attr->type == ATTR_INLINE);
+
+  if (attr != NULL)
+  {
+    if (attr->type == ATTR_CONST)
+      typequalifier = TYPE_QUALIFIER_CONST;
+    else if (attr->type == ATTR_INLINE)
+      funcspecifier = FUNCTION_SPECIFIER_INLINE;
+  }
+
+  return make_decl_spec2(type, left, right, stgclass, typequalifier, funcspecifier);
+}
+
+static decl_spec_t *make_decl_spec2(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
+{
   decl_spec_t *declspec = left ? left : right;
   if (!declspec)
   {
     declspec = xmalloc(sizeof(*declspec));
     declspec->type = NULL;
-    declspec->attrs = NULL;
     declspec->stgclass = STG_NONE;
+    declspec->typequalifier = TYPE_QUALIFIER_NONE;
+    declspec->funcspecifier = FUNCTION_SPECIFIER_NONE;
   }
   declspec->type = type;
   if (left && declspec != left)
   {
-    declspec->attrs = append_attr_list(declspec->attrs, left->attrs);
     if (declspec->stgclass == STG_NONE)
       declspec->stgclass = left->stgclass;
     else if (left->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
+
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = left->typequalifier;
+    else if (left->typequalifier != TYPE_QUALIFIER_NONE)
+      error_loc("only one type qualifier can be specified\n");
+
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = left->funcspecifier;
+    else if (left->funcspecifier != FUNCTION_SPECIFIER_NONE)
+      error_loc("only one function specifier can be specified\n");
+
     assert(!left->type);
     free(left);
   }
   if (right && declspec != right)
   {
-    declspec->attrs = append_attr_list(declspec->attrs, right->attrs);
     if (declspec->stgclass == STG_NONE)
       declspec->stgclass = right->stgclass;
     else if (right->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
+
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = right->typequalifier;
+    else if (right->typequalifier != TYPE_QUALIFIER_NONE)
+      error_loc("only one type qualifier can be specified\n");
+
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = right->funcspecifier;
+    else if (right->funcspecifier != FUNCTION_SPECIFIER_NONE)
+      error_loc("only one function specifier can be specified\n");
+
     assert(!right->type);
     free(right);
   }
 
-  declspec->attrs = append_attr(declspec->attrs, attr);
   if (declspec->stgclass == STG_NONE)
     declspec->stgclass = stgclass;
   else if (stgclass != STG_NONE)
     error_loc("only one storage class can be specified\n");
 
-  /* apply attributes to type */
-  if (type && declspec->attrs)
-  {
-    attr_list_t *attrs;
-    declspec->type = duptype(type, 1);
-    attrs = map_attrs(type->attrs, NULL);
-    declspec->type->attrs = append_attr_list(attrs, declspec->attrs);
-    declspec->attrs = NULL;
-  }
+  if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+    declspec->typequalifier = typequalifier;
+  else if (typequalifier != TYPE_QUALIFIER_NONE)
+    error_loc("only one type qualifier can be specified\n");
+
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+    declspec->funcspecifier = funcspecifier;
+  else if (funcspecifier != FUNCTION_SPECIFIER_NONE)
+    error_loc("only one function specifier can be specified\n");
 
   return declspec;
 }
@@ -1476,7 +1526,8 @@ static type_t *get_array_or_ptr_ref(type_t *type)
 
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
-    type_t *chain_type;
+    type_t *chain_type = NULL;
+    decl_spec_t *chain_declspec = NULL;
 
     if (!chain)
         return type;
@@ -1484,11 +1535,19 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         ;
 
     if (is_ptr(chain_type))
-        chain_type->details.pointer.ref.type = type;
+        chain_declspec = &chain_type->details.pointer.ref;
     else if (is_array(chain_type))
-        chain_type->details.array.elem.type = type;
+        chain_declspec = &chain_type->details.array.elem;
     else
         assert(0);
+
+    chain_declspec->type = type;
+    /* we need to move the ATTR_CONST attribute off the type of the pointee and onto its declspec
+     * typequalifier on the pointer */
+    if (is_attr(type->attrs, ATTR_CONST)) {
+      type->attrs = remove_attr(type->attrs, ATTR_CONST);
+      chain_declspec->typequalifier = TYPE_QUALIFIER_CONST;
+    }
 
     return chain;
 }
@@ -1508,7 +1567,7 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const declarator_t *decl,
+static var_t *declare_var(attr_list_t *attrs, decl_spec_t *declspec, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1517,25 +1576,50 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
   expr_t *dim;
   type_t **ptype;
   type_t *func_type = decl ? decl->func_type : NULL;
-  type_t *type = decl_spec->type;
+  type_t *type = declspec->type;
 
-  if (is_attr(type->attrs, ATTR_INLINE))
-  {
+
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     if (!func_type)
       error_loc("inline attribute applied to non-function type\n");
     else
     {
-      type_t *t;
-      /* move inline attribute from return type node to function node */
-      for (t = func_type; is_ptr(t); t = type_pointer_get_ref_type(t))
-        ;
-      t->attrs = move_attr(t->attrs, type->attrs, ATTR_INLINE);
+      v->declspec.funcspecifier = declspec->funcspecifier;
     }
   }
 
-  /* add type onto the end of the pointers in pident->type */
-  v->declspec.type = append_chain_type(decl ? decl->type : NULL, type);
-  v->declspec.stgclass = decl_spec->stgclass;
+  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's declspec
+   * unless the pointee already has const type qualifier*/
+
+  /* we need to shuffle aroundand tranlate between TYPE_QUALIFEIR_CONST and ATTR_CONST
+   * in this block */
+  if (!decl)
+  {
+    /* simplest case, no pointers to deal with here */
+    v->declspec.typequalifier = declspec->typequalifier;
+  } else if (decl->bits) {
+    /* dealing with a bitfield, just pass it on */
+    v->declspec.type = type_new_bitfield(declspec, decl->bits);
+  }
+  else {
+    /* here we're dealing with a pointerish type chain, so we need to pull
+     * the typequalifier off of the declspec and stick them in the type's attr list
+     */
+    if (declspec->typequalifier == TYPE_QUALIFIER_CONST) {
+      type->attrs = append_attr(type->attrs, make_attr(ATTR_CONST));
+      assert(is_attr(type->attrs, ATTR_CONST));
+    }
+
+    v->declspec.type = append_chain_type(decl->type, type);
+    /* finally pull the ATTR_CONST attribute off the head of the pointerish type chain,
+     * and stick on the var's declspec */
+    if (is_attr(v->declspec.type->attrs, ATTR_CONST)) {
+      v->declspec.type->attrs = remove_attr(v->declspec.type->attrs, ATTR_CONST);
+      v->declspec.typequalifier = TYPE_QUALIFIER_CONST;
+    }
+  }
+
+  v->declspec.stgclass = declspec->stgclass;
   v->attrs = attrs;
 
   /* check for pointer attribute being applied to non-pointer, non-array
@@ -1676,12 +1760,17 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
   {
     type_t *ft, *t;
     type_t *return_type = v->declspec.type;
+    enum type_qualifier typequalifier = v->declspec.typequalifier;
+
     v->declspec.type = func_type;
+    v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
     for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref_type(ft))
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
     ft->details.function->retval->declspec.type = return_type;
+    ft->details.function->retval->declspec.typequalifier = typequalifier;
+
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
     for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref_type(t))
@@ -1694,9 +1783,6 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
-
-  if (decl->bits)
-    v->declspec.type = type_new_bitfield(&v->declspec, decl->bits);
 
   return v;
 }
