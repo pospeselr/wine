@@ -60,7 +60,7 @@ static void fix_incomplete_types(type_t *complete_type);
 static str_list_t *append_str(str_list_t *list, char *str);
 static attr_list_t *append_attr(attr_list_t *list, attr_t *attr);
 static attr_list_t *append_attr_list(attr_list_t *new_list, attr_list_t *old_list);
-static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass);
+static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier);
 static attr_t *make_attr(enum attr_type type);
 static attr_t *make_attrv(enum attr_type type, unsigned int val);
 static attr_t *make_attrp(enum attr_type type, void *val);
@@ -76,6 +76,7 @@ static declarator_t *make_declarator(var_t *var);
 static type_t *make_safearray(type_t *type);
 static typelib_t *make_library(const char *name, const attr_list_t *attrs);
 static type_t *append_chain_type(type_t *chain, type_t *type);
+static decl_spec_t *append_chain_declspec(decl_spec_t *chain, type_t *type, enum type_qualifier typequalifier);
 static warning_list_t *append_warning(warning_list_t *, int);
 
 static type_t *reg_typedefs(decl_spec_t *decl_spec, var_list_t *names, attr_list_t *attrs);
@@ -158,6 +159,8 @@ static typelib_t *current_typelib;
 	struct _import_t *import;
 	struct _decl_spec_t *declspec;
 	enum storage_class stgclass;
+	enum type_qualifier typequalifier;
+	enum function_specifier funcspecifier;
 }
 
 %token <str> aIDENTIFIER aPRAGMA
@@ -259,14 +262,16 @@ static typelib_t *current_typelib;
 %token tWCHAR tWIREMARSHAL
 %token tAPARTMENT tNEUTRAL tSINGLE tFREE tBOTH
 
-%type <attr> attribute type_qualifier function_specifier acf_attribute
-%type <attr_list> m_attributes attributes attrib_list m_type_qual_list
+%type <attr> attribute acf_attribute
+%type <attr_list> m_attributes attributes attrib_list
 %type <attr_list> acf_attributes acf_attribute_list
 %type <str_list> str_list
 %type <expr> m_expr expr expr_const expr_int_const array m_bitfield
 %type <expr_list> m_exprs /* exprs expr_list */ expr_list_int_const
 %type <ifinfo> interfacehdr
 %type <stgclass> storage_cls_spec
+%type <typequalifier> type_qualifier m_type_qual_bits
+%type <funcspecifier> function_specifier
 %type <declspec> decl_spec decl_spec_no_type m_decl_spec_no_type
 %type <type> inherit interface interfacedef interfacedec
 %type <type> dispinterface dispinterfacehdr dispinterfacedef
@@ -948,20 +953,20 @@ storage_cls_spec:
 	;
 
 function_specifier:
-	  tINLINE				{ $$ = make_attr(ATTR_INLINE); }
+	  tINLINE				{ $$ = FUNCTION_SPECIFIER_INLINE; }
 	;
 
 type_qualifier:
-	  tCONST				{ $$ = make_attr(ATTR_CONST); }
+	  tCONST				{ $$ = TYPE_QUALIFIER_CONST; }
 	;
 
-m_type_qual_list:				{ $$ = NULL; }
-	| m_type_qual_list type_qualifier	{ $$ = append_attr($1, $2); }
+m_type_qual_bits:			{ $$ = TYPE_QUALIFIER_NONE; }
+	| m_type_qual_bits type_qualifier	{ $$ = $1 | $2; }
 	;
 
-decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_spec($1, $2, NULL, NULL, STG_NONE); }
+decl_spec: type m_decl_spec_no_type		{ $$ = make_decl_spec($1, $2, NULL, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE); }
 	| decl_spec_no_type type m_decl_spec_no_type
-						{ $$ = make_decl_spec($2, $1, $3, NULL, STG_NONE); }
+						{ $$ = make_decl_spec($2, $1, $3, STG_NONE, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE); }
 	;
 
 m_decl_spec_no_type:				{ $$ = NULL; }
@@ -969,44 +974,44 @@ m_decl_spec_no_type:				{ $$ = NULL; }
 	;
 
 decl_spec_no_type:
-	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
-	| function_specifier m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, $1, STG_NONE); }
-	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, NULL, $1); }
+	  type_qualifier m_decl_spec_no_type	{ $$ = make_decl_spec(NULL, $2, NULL, STG_NONE, $1, FUNCTION_SPECIFIER_NONE); }
+	| function_specifier m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, STG_NONE, TYPE_QUALIFIER_NONE, $1); }
+	| storage_cls_spec m_decl_spec_no_type  { $$ = make_decl_spec(NULL, $2, NULL, $1, TYPE_QUALIFIER_NONE, FUNCTION_SPECIFIER_NONE); }
 	;
 
 declarator:
-	  '*' m_type_qual_list declarator %prec PPTR
-						{ $$ = $3; $$->type = append_chain_type($$->type, type_new_pointer(pointer_default, NULL, $2)); }
+	  '*' m_type_qual_bits declarator %prec PPTR
+						{ $$ = $3; append_chain_declspec(&$$->declspec, type_new_pointer(pointer_default, NULL), $2); }
 	| callconv declarator			{ $$ = $2; if ($$->func_type) $$->func_type->attrs = append_attr($$->func_type->attrs, make_attrp(ATTR_CALLCONV, $1));
-						           else if ($$->type) $$->type->attrs = append_attr($$->type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
+						           else if ($$->declspec.type) $$->declspec.type->attrs = append_attr($$->declspec.type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
 	| direct_declarator
 	;
 
 direct_declarator:
 	  ident					{ $$ = make_declarator($1); }
 	| '(' declarator ')'			{ $$ = $2; }
-	| direct_declarator array		{ $$ = $1; $$->type = append_array($$->type, $2); }
+	| direct_declarator array		{ $$ = $1; $$->declspec.type = append_array($$->declspec.type, $2); }
 	| direct_declarator '(' m_args ')'	{ $$ = $1;
-						  $$->func_type = append_chain_type($$->type, type_new_function($3));
-						  $$->type = NULL;
+						  $$->func_type = append_chain_type($$->declspec.type, type_new_function($3));
+						  $$->declspec.type = NULL;
 						}
 	;
 
 /* abstract declarator */
 abstract_declarator:
-	  '*' m_type_qual_list m_abstract_declarator %prec PPTR
-						{ $$ = $3; $$->type = append_chain_type($$->type, type_new_pointer(pointer_default, NULL, $2)); }
+	  '*' m_type_qual_bits m_abstract_declarator %prec PPTR
+						{ $$ = $3; append_chain_declspec(&$$->declspec, type_new_pointer(pointer_default, NULL), $2); }
 	| callconv m_abstract_declarator	{ $$ = $2; if ($$->func_type) $$->func_type->attrs = append_attr($$->func_type->attrs, make_attrp(ATTR_CALLCONV, $1));
-						           else if ($$->type) $$->type->attrs = append_attr($$->type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
+						           else if ($$->declspec.type) $$->declspec.type->attrs = append_attr($$->declspec.type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
 	| abstract_direct_declarator
 	;
 
 /* abstract declarator without accepting direct declarator */
 abstract_declarator_no_direct:
-	  '*' m_type_qual_list m_any_declarator %prec PPTR
-						{ $$ = $3; $$->type = append_chain_type($$->type, type_new_pointer(pointer_default, NULL, $2)); }
+	  '*' m_type_qual_bits m_any_declarator %prec PPTR
+						{ $$ = $3; append_chain_declspec(&$$->declspec, type_new_pointer(pointer_default, NULL), $2); }
 	| callconv m_any_declarator		{ $$ = $2; if ($$->func_type) $$->func_type->attrs = append_attr($$->func_type->attrs, make_attrp(ATTR_CALLCONV, $1));
-						           else if ($$->type) $$->type->attrs = append_attr($$->type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
+						           else if ($$->declspec.type) $$->declspec.type->attrs = append_attr($$->declspec.type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
 	;
 
 /* abstract declarator or empty */
@@ -1017,33 +1022,33 @@ m_abstract_declarator: 				{ $$ = make_declarator(NULL); }
 /* abstract direct declarator */
 abstract_direct_declarator:
 	  '(' abstract_declarator_no_direct ')'	{ $$ = $2; }
-	| abstract_direct_declarator array	{ $$ = $1; $$->type = append_array($$->type, $2); }
-	| array					{ $$ = make_declarator(NULL); $$->type = append_array($$->type, $1); }
+	| abstract_direct_declarator array	{ $$ = $1; $$->declspec.type = append_array($$->declspec.type, $2); }
+	| array					{ $$ = make_declarator(NULL); $$->declspec.type = append_array($$->declspec.type, $1); }
 	| '(' m_args ')'
 						{ $$ = make_declarator(NULL);
-						  $$->func_type = append_chain_type($$->type, type_new_function($2));
-						  $$->type = NULL;
+						  $$->func_type = append_chain_type($$->declspec.type, type_new_function($2));
+						  $$->declspec.type = NULL;
 						}
 	| abstract_direct_declarator '(' m_args ')'
 						{ $$ = $1;
-						  $$->func_type = append_chain_type($$->type, type_new_function($3));
-						  $$->type = NULL;
+						  $$->func_type = append_chain_type($$->declspec.type, type_new_function($3));
+						  $$->declspec.type = NULL;
 						}
 	;
 
 /* abstract or non-abstract declarator */
 any_declarator:
-	  '*' m_type_qual_list m_any_declarator %prec PPTR
-						{ $$ = $3; $$->type = append_chain_type($$->type, type_new_pointer(pointer_default, NULL, $2)); }
-	| callconv m_any_declarator		{ $$ = $2; $$->type->attrs = append_attr($$->type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
+	  '*' m_type_qual_bits m_any_declarator %prec PPTR
+						{ $$ = $3; append_chain_declspec(&$$->declspec, type_new_pointer(pointer_default, NULL), $2); }
+	| callconv m_any_declarator		{ $$ = $2; $$->declspec.type->attrs = append_attr($$->declspec.type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
 	| any_direct_declarator
 	;
 
 /* abstract or non-abstract declarator without accepting direct declarator */
 any_declarator_no_direct:
-	  '*' m_type_qual_list m_any_declarator %prec PPTR
-						{ $$ = $3; $$->type = append_chain_type($$->type, type_new_pointer(pointer_default, NULL, $2)); }
-	| callconv m_any_declarator		{ $$ = $2; $$->type->attrs = append_attr($$->type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
+	  '*' m_type_qual_bits m_any_declarator %prec PPTR
+						{ $$ = $3; append_chain_declspec(&$$->declspec, type_new_pointer(pointer_default, NULL), $2); }
+	| callconv m_any_declarator		{ $$ = $2; $$->declspec.type->attrs = append_attr($$->declspec.type->attrs, make_attrp(ATTR_CALLCONV, $1)); }
 	;
 
 /* abstract or non-abstract declarator or empty */
@@ -1057,17 +1062,17 @@ m_any_declarator: 				{ $$ = make_declarator(NULL); }
 any_direct_declarator:
 	  ident					{ $$ = make_declarator($1); }
 	| '(' any_declarator_no_direct ')'	{ $$ = $2; }
-	| any_direct_declarator array		{ $$ = $1; $$->type = append_array($$->type, $2); }
-	| array					{ $$ = make_declarator(NULL); $$->type = append_array($$->type, $1); }
+	| any_direct_declarator array		{ $$ = $1; $$->declspec.type = append_array($$->declspec.type, $2); }
+	| array					{ $$ = make_declarator(NULL); $$->declspec.type = append_array($$->declspec.type, $1); }
 	| '(' m_args ')'
 						{ $$ = make_declarator(NULL);
-						  $$->func_type = append_chain_type($$->type, type_new_function($2));
-						  $$->type = NULL;
+						  $$->func_type = append_chain_type($$->declspec.type, type_new_function($2));
+						  $$->declspec.type = NULL;
 						}
 	| any_direct_declarator '(' m_args ')'
 						{ $$ = $1;
-						  $$->func_type = append_chain_type($$->type, type_new_function($3));
-						  $$->type = NULL;
+						  $$->func_type = append_chain_type($$->declspec.type, type_new_function($3));
+						  $$->declspec.type = NULL;
 						}
 	;
 
@@ -1233,6 +1238,7 @@ static attr_list_t *append_attr(attr_list_t *list, attr_t *attr)
     LIST_FOR_EACH_ENTRY(attr_existing, list, attr_t, entry)
         if (attr_existing->type == attr->type)
         {
+            __builtin_trap();
             parser_warning("duplicate attribute %s\n", get_attr_display_name(attr->type));
             /* use the last attribute, like MIDL does */
             list_remove(&attr_existing->entry);
@@ -1292,53 +1298,73 @@ static attr_list_t *map_attrs(const attr_list_t *list, map_attrs_filter_t filter
   return new_list;
 }
 
-static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, attr_t *attr, enum storage_class stgclass)
+static decl_spec_t *make_decl_spec(type_t *type, decl_spec_t *left, decl_spec_t *right, enum storage_class stgclass, enum type_qualifier typequalifier, enum function_specifier funcspecifier)
 {
   decl_spec_t *declspec = left ? left : right;
   if (!declspec)
   {
     declspec = xmalloc(sizeof(*declspec));
     declspec->type = NULL;
-    declspec->attrs = NULL;
     declspec->stgclass = STG_NONE;
+    declspec->typequalifier = TYPE_QUALIFIER_NONE;
+    declspec->funcspecifier = FUNCTION_SPECIFIER_NONE;
   }
   declspec->type = type;
   if (left && declspec != left)
   {
-    declspec->attrs = append_attr_list(declspec->attrs, left->attrs);
     if (declspec->stgclass == STG_NONE)
       declspec->stgclass = left->stgclass;
     else if (left->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
+
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = left->typequalifier;
+    else if (left->typequalifier != TYPE_QUALIFIER_NONE)
+      error_loc("only one type qualifier can be specified\n");
+
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = left->funcspecifier;
+    else if (left->funcspecifier != FUNCTION_SPECIFIER_NONE)
+      error_loc("only one function specifier can be specified\n");
+
     assert(!left->type);
     free(left);
   }
   if (right && declspec != right)
   {
-    declspec->attrs = append_attr_list(declspec->attrs, right->attrs);
     if (declspec->stgclass == STG_NONE)
       declspec->stgclass = right->stgclass;
     else if (right->stgclass != STG_NONE)
       error_loc("only one storage class can be specified\n");
+
+    if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+      declspec->typequalifier = right->typequalifier;
+    else if (right->typequalifier != TYPE_QUALIFIER_NONE)
+      error_loc("only one type qualifier can be specified\n");
+
+    if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+      declspec->funcspecifier = right->funcspecifier;
+    else if (right->funcspecifier != FUNCTION_SPECIFIER_NONE)
+      error_loc("only one function specifier can be specified\n");
+
     assert(!right->type);
     free(right);
   }
 
-  declspec->attrs = append_attr(declspec->attrs, attr);
   if (declspec->stgclass == STG_NONE)
     declspec->stgclass = stgclass;
   else if (stgclass != STG_NONE)
     error_loc("only one storage class can be specified\n");
 
-  /* apply attributes to type */
-  if (type && declspec->attrs)
-  {
-    attr_list_t *attrs;
-    declspec->type = duptype(type, 1);
-    attrs = map_attrs(type->attrs, NULL);
-    declspec->type->attrs = append_attr_list(attrs, declspec->attrs);
-    declspec->attrs = NULL;
-  }
+  if (declspec->typequalifier == TYPE_QUALIFIER_NONE)
+    declspec->typequalifier = typequalifier;
+  else if (typequalifier != TYPE_QUALIFIER_NONE)
+    error_loc("only one type qualifier can be specified\n");
+
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_NONE)
+    declspec->funcspecifier = funcspecifier;
+  else if (funcspecifier != FUNCTION_SPECIFIER_NONE)
+    error_loc("only one function specifier can be specified\n");
 
   return declspec;
 }
@@ -1477,7 +1503,7 @@ static type_t *get_array_or_ptr_ref(type_t *type)
 
 static type_t *append_chain_type(type_t *chain, type_t *type)
 {
-    type_t *chain_type;
+    type_t *chain_type = NULL;
 
     if (!chain)
         return type;
@@ -1491,6 +1517,34 @@ static type_t *append_chain_type(type_t *chain, type_t *type)
         chain_type->details.array.elem.type = type;
     else
         assert(0);
+
+    return chain;
+}
+
+static decl_spec_t *append_chain_declspec(decl_spec_t *chain, type_t *type, enum type_qualifier typequalifier)
+{
+    type_t *chain_type = chain->type;
+    decl_spec_t *chain_declspec = NULL;
+
+    if (!chain_type)
+    {
+        chain->type = type;
+        chain->typequalifier = typequalifier;
+        return chain;
+    }
+
+    for(; get_array_or_ptr_ref(chain_type); chain_type = get_array_or_ptr_ref(chain_type))
+        ;
+
+    if (is_ptr(chain_type))
+        chain_declspec = &chain_type->details.pointer.ref;
+    else if (is_array(chain_type))
+        chain_declspec = &chain_type->details.array.elem;
+    else
+        assert(NULL);
+
+    chain_declspec->type = type;
+    chain_declspec->typequalifier = typequalifier;
 
     return chain;
 }
@@ -1510,7 +1564,7 @@ static warning_list_t *append_warning(warning_list_t *list, int num)
     return list;
 }
 
-static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const declarator_t *decl,
+static var_t *declare_var(attr_list_t *attrs, decl_spec_t *declspec, const declarator_t *decl,
                        int top)
 {
   var_t *v = decl->var;
@@ -1519,25 +1573,41 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
   expr_t *dim;
   type_t **ptype;
   type_t *func_type = decl ? decl->func_type : NULL;
-  type_t *type = decl_spec->type;
+  type_t *type = declspec->type;
 
-  if (is_attr(type->attrs, ATTR_INLINE))
-  {
+
+  if (declspec->funcspecifier == FUNCTION_SPECIFIER_INLINE) {
     if (!func_type)
       error_loc("inline attribute applied to non-function type\n");
     else
     {
-      type_t *t;
-      /* move inline attribute from return type node to function node */
-      for (t = func_type; is_ptr(t); t = type_pointer_get_ref_type(t))
-        ;
-      t->attrs = move_attr(t->attrs, type->attrs, ATTR_INLINE);
+      v->declspec.funcspecifier = declspec->funcspecifier;
     }
   }
 
-  /* add type onto the end of the pointers in pident->type */
-  v->declspec.type = append_chain_type(decl ? decl->type : NULL, type);
-  v->declspec.stgclass = decl_spec->stgclass;
+  /* if the var type is a pointerish, we need to move the type qualifier to the pointee's declspec
+   * unless the pointee already has const type qualifier*/
+  if (!decl)
+  {
+    /* simplest case, no pointers to deal with here */
+    v->declspec.typequalifier = declspec->typequalifier;
+  } else if (decl->bits)
+  {
+    /* dealing with a bitfield, generate bitfield and copy over typequalifier*/
+    v->declspec.type = type_new_bitfield(declspec->type, decl->bits);
+    v->declspec.typequalifier = declspec->typequalifier;
+  }
+  else
+  {
+    /* here we're dealing with a pointerish type chain, so we need to pull
+     * the typequalifier off of the declspec and stick them in the type's attr list
+     */
+    v->declspec.type = decl->declspec.type;
+    v->declspec.typequalifier = decl->declspec.typequalifier;
+    append_chain_declspec(&v->declspec, type, declspec->typequalifier);
+  }
+
+  v->declspec.stgclass = declspec->stgclass;
   v->attrs = attrs;
 
   /* check for pointer attribute being applied to non-pointer, non-array
@@ -1680,12 +1750,17 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
   {
     type_t *ft, *t;
     type_t *return_type = v->declspec.type;
+    enum type_qualifier typequalifier = v->declspec.typequalifier;
+
     v->declspec.type = func_type;
+    v->declspec.typequalifier = TYPE_QUALIFIER_NONE;
     for (ft = v->declspec.type; is_ptr(ft); ft = type_pointer_get_ref_type(ft))
       ;
     assert(type_get_type_detect_alias(ft) == TYPE_FUNCTION);
     ft->details.function->retval = make_var(xstrdup("_RetVal"));
     ft->details.function->retval->declspec.type = return_type;
+    ft->details.function->retval->declspec.typequalifier = typequalifier;
+
     /* move calling convention attribute, if present, from pointer nodes to
      * function node */
     for (t = v->declspec.type; is_ptr(t); t = type_pointer_get_ref_type(t))
@@ -1698,9 +1773,6 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *decl_spec, const decl
       if (is_attr(t->attrs, ATTR_CALLCONV))
         error_loc("calling convention applied to non-function-pointer type\n");
   }
-
-  if (decl->bits)
-    v->declspec.type = type_new_bitfield(v->declspec.type, decl->bits);
 
   return v;
 }
@@ -1801,7 +1873,7 @@ static declarator_t *make_declarator(var_t *var)
 {
   declarator_t *d = xmalloc(sizeof(*d));
   d->var = var ? var : make_var(NULL);
-  d->type = NULL;
+  init_declspec(&d->declspec, NULL);
   d->func_type = NULL;
   d->bits = NULL;
   return d;
@@ -2180,7 +2252,6 @@ struct allowed_attr allowed_attr[] =
     /* ATTR_CASE */                { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, "case" },
     /* ATTR_CODE */                { 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "code" },
     /* ATTR_COMMSTATUS */          { 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, "comm_status" },
-    /* ATTR_CONST */               { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "const" },
     /* ATTR_CONTEXTHANDLE */       { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, "context_handle" },
     /* ATTR_CONTROL */             { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, "control" },
     /* ATTR_DECODE */              { 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, "decode" },
@@ -2215,7 +2286,6 @@ struct allowed_attr allowed_attr[] =
     /* ATTR_IMMEDIATEBIND */       { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "immediatebind" },
     /* ATTR_IMPLICIT_HANDLE */     { 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "implicit_handle" },
     /* ATTR_IN */                  { 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, "in" },
-    /* ATTR_INLINE */              { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "inline" },
     /* ATTR_INPUTSYNC */           { 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "inputsync" },
     /* ATTR_LENGTHIS */            { 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, "length_is" },
     /* ATTR_LIBLCID */             { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, "lcid" },
