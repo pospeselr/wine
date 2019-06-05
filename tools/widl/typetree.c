@@ -30,12 +30,16 @@
 #include "typetree.h"
 #include "header.h"
 
-type_t *duptype(type_t *t, int dupname)
+/* this function is only used in declare_var in parser.y, see FIXME note */
+type_t *dup_pointer_type(type_t *t)
 {
-  type_t *d = alloc_type();
+  type_t *d;
 
+  assert(is_ptr(t) && t->details.pointer.def_fc != FC_RP);
+
+  d = alloc_type();
   *d = *t;
-  if (dupname && t->name)
+  if (t->name)
     d->name = xstrdup(t->name);
 
   return d;
