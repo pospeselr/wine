@@ -1652,7 +1652,7 @@ static var_t *declare_var(attr_list_t *attrs, decl_spec_t *declspec, const decla
          * store an offset to the typeformat string in the type object, but
          * two typeformat strings may be written depending on whether the
          * pointer is a toplevel parameter or not */
-        *pt = duptype(*pt, 1);
+        *pt = dup_pointer_type(*pt);
       }
     }
     else if (ptr_attr)
