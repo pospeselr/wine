@@ -763,7 +763,7 @@ static void add_enum_typeinfo(msft_typelib_t *typelib, type_t *enumeration);
 static void add_union_typeinfo(msft_typelib_t *typelib, type_t *tunion);
 static void add_coclass_typeinfo(msft_typelib_t *typelib, type_t *cls);
 static void add_dispinterface_typeinfo(msft_typelib_t *typelib, type_t *dispinterface);
-
+static void add_typedef_typeinfo(msft_typelib_t *typelib, type_t *tdef);
 
 /****************************************************************************
  *	encode_type
@@ -966,33 +966,61 @@ static int encode_type(
         }
         else
         {
-            /* typedef'd types without public attribute aren't included in the typelib */
-            while (type_is_alias(type) && !is_attr(type->attrs, ATTR_PUBLIC))
-                type = type_alias_get_aliasee_type(type);
+            /* typedef'd types without public attribute aren't included in the typelib
+             * typedef'd types with a wire_marshal attribute must be included
+             */
+            while (type_is_alias(type))
+            {
+                if (is_attr(type->attrs, ATTR_WIREMARSHAL))
+                {
+                    type = get_attrp(type->attrs, ATTR_WIREMARSHAL);
+                    break;
+                }
+                else if(!is_attr(type->attrs, ATTR_PUBLIC))
+                {
+                    type = type_alias_get_aliasee_type(type);
+                }
+                else
+                {
+                    break;
+                }
+            }
 
             chat("encode_type: VT_USERDEFINED - adding new type %s, real type %d\n",
                  type->name, type_get_type(type));
 
-            switch (type_get_type(type))
+            /* we've either fully resolved the typedef down to an actual type or
+             * we must include the typedef because it's a wiremarshal (or public) type
+             */
+            if (type_is_alias(type))
             {
-            case TYPE_STRUCT:
-                add_structure_typeinfo(typelib, type);
-                break;
-            case TYPE_INTERFACE:
-                add_interface_typeinfo(typelib, type);
-                break;
-            case TYPE_ENUM:
-                add_enum_typeinfo(typelib, type);
-                break;
-            case TYPE_UNION:
-                add_union_typeinfo(typelib, type);
-                break;
-            case TYPE_COCLASS:
-                add_coclass_typeinfo(typelib, type);
-                break;
-            default:
-                error("encode_type: VT_USERDEFINED - unhandled type %d\n",
-                      type_get_type(type));
+                add_typedef_typeinfo(typelib, type);
+            }
+            else
+            {
+                switch (type_get_type(type))
+                {
+                case TYPE_STRUCT:
+                    add_structure_typeinfo(typelib, type);
+                    break;
+                case TYPE_INTERFACE:
+                    add_interface_typeinfo(typelib, type);
+                    break;
+                case TYPE_ENUM:
+                    add_enum_typeinfo(typelib, type);
+                    break;
+                /* fallthrough */
+                case TYPE_UNION:
+                case TYPE_ENCAPSULATED_UNION:
+                    add_union_typeinfo(typelib, type);
+                    break;
+                case TYPE_COCLASS:
+                    add_coclass_typeinfo(typelib, type);
+                    break;
+                default:
+                    error("encode_type: VT_USERDEFINED - unhandled type %d\n",
+                          type_get_type(type));
+                }
             }
 
             typeinfo_offset = typelib->typelib_typeinfo_offsets[type->typelib_idx];
