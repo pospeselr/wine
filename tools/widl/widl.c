@@ -42,6 +42,7 @@
 #include "parser.h"
 #include "wine/wpp.h"
 #include "header.h"
+#include "pathtools.h"
 
 static const char usage[] =
 "Usage: widl [options...] infile.idl\n"
@@ -734,7 +735,17 @@ int main(int argc,char *argv[])
   }
 
 #ifdef DEFAULT_INCLUDE_DIR
-  wpp_add_include_path(DEFAULT_INCLUDE_DIR);
+  char exe_path[PATH_MAX];
+  get_executable_path (argv[0], &exe_path[0], sizeof (exe_path) / sizeof (exe_path[0]));
+  char * rel_to_includedir = get_relative_path (DEFAULT_BINDIR, DEFAULT_INCLUDE_DIR);
+  if (strrchr (exe_path, '/') != NULL) {
+     strrchr (exe_path, '/')[1] = '\0';
+  }
+  char relocated_default_include_dir[PATH_MAX];
+  strcpy (relocated_default_include_dir, exe_path);
+  strcat (relocated_default_include_dir, rel_to_includedir);
+  simplify_path (&relocated_default_include_dir[0]);
+  wpp_add_include_path(relocated_default_include_dir);
 #endif
 
   switch (target_cpu)
